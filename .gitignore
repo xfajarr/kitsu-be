@@ -1,0 +1,19 @@
+# deps
+node_modules/
+
+# env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# build
+dist/
+coverage/
+
+# logs
+*.log
+
+# os
+.DS_Store

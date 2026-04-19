@@ -1,0 +1,1158 @@
+openapi: 3.1.0
+info:
+  title: Kitsu DeFi API
+  description: |
+    Gamified DeFi savings app on TON blockchain.
+    
+    ## Authentication
+    Most endpoints require JWT authentication. Get a token by connecting your wallet via `/auth/connect`.
+    
+    Include the token in the `Authorization` header as `Bearer <token>`.
+  version: 1.0.0
+  contact:
+    name: Kitsu DeFi
+    url: https://kitsu.fi
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3001
+    description: Local development
+  - url: https://api.kitsu.fi
+    description: Production
+
+tags:
+  - name: Health
+    description: System health checks
+  - name: Auth
+    description: Wallet authentication
+  - name: Users
+    description: User profiles and leaderboard
+  - name: Goals
+    description: Savings goals management
+  - name: Dens
+    description: Community savings pools
+  - name: Portfolio
+    description: User portfolio and prices
+  - name: Transactions
+    description: Blockchain transactions
+  - name: Quests
+    description: Gamification quests
+  - name: AI
+    description: Foxy AI chat assistant
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns the health status of the API and database connection
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /auth/connect:
+    post:
+      tags: [Auth]
+      summary: Connect wallet
+      description: Verify wallet signature and issue JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectRequest'
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      description: Returns the authenticated user's profile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/me:
+    patch:
+      tags: [Users]
+      summary: Update profile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Updated user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /users/leaderboard:
+    get:
+      tags: [Users]
+      summary: Get leaderboard
+      description: Returns top users ranked by XP
+      responses:
+        '200':
+          description: Leaderboard entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeaderboardResponse'
+
+  /goals:
+    get:
+      tags: [Goals]
+      summary: List goals
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of user's goals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalsResponse'
+    post:
+      tags: [Goals]
+      summary: Create goal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGoalRequest'
+      responses:
+        '201':
+          description: Goal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+
+  /goals/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Goals]
+      summary: Update goal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGoalRequest'
+      responses:
+        '200':
+          description: Updated goal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GoalResponse'
+    delete:
+      tags: [Goals]
+      summary: Archive goal
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Goal archived
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      archived:
+                        type: boolean
+
+  /dens:
+    get:
+      tags: [Dens]
+      summary: List public dens
+      responses:
+        '200':
+          description: List of public dens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DensResponse'
+    post:
+      tags: [Dens]
+      summary: Create den
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDenRequest'
+      responses:
+        '201':
+          description: Den created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DenResponse'
+
+  /dens/mine:
+    get:
+      tags: [Dens]
+      summary: List user's dens
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User's dens
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DensResponse'
+
+  /dens/{id}:
+    get:
+      tags: [Dens]
+      summary: Get den details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Den details with members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DenDetailResponse'
+
+  /dens/{id}/join:
+    post:
+      tags: [Dens]
+      summary: Join den
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinDenRequest'
+      responses:
+        '200':
+          description: Joined den
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinDenResponse'
+
+  /dens/{id}/leave:
+    post:
+      tags: [Dens]
+      summary: Leave den
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Left den
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      left:
+                        type: boolean
+
+  /portfolio:
+    get:
+      tags: [Portfolio]
+      summary: Get portfolio
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User's portfolio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortfolioResponse'
+
+  /portfolio/prices:
+    get:
+      tags: [Portfolio]
+      summary: Get token prices
+      responses:
+        '200':
+          description: Current token prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PricesResponse'
+
+  /transactions/deposit:
+    post:
+      tags: [Transactions]
+      summary: Initiate deposit
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '200':
+          description: Transaction initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/withdraw:
+    post:
+      tags: [Transactions]
+      summary: Initiate withdrawal
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Transaction initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/stake:
+    post:
+      tags: [Transactions]
+      summary: Stake via TONStakers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Stake transaction initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/unstake:
+    post:
+      tags: [Transactions]
+      summary: Unstake via TONStakers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unstake transaction initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+
+  /transactions/history:
+    get:
+      tags: [Transactions]
+      summary: Transaction history
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Transaction history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsResponse'
+
+  /quests:
+    get:
+      tags: [Quests]
+      summary: List quests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User's quests with progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestsResponse'
+
+  /quests/{id}/claim:
+    post:
+      tags: [Quests]
+      summary: Claim quest reward
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Quest claimed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimQuestResponse'
+
+  /ai/chat:
+    post:
+      tags: [AI]
+      summary: Chat with Foxy
+      description: AI assistant for DeFi savings advice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from /auth/connect
+
+  schemas:
+    # Base response
+    Success:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+          example: true
+
+    Error:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              example: Invalid request body
+
+    # Health
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        db:
+          type: string
+          example: connected
+        timestamp:
+          type: string
+          format: date-time
+
+    # User
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        walletAddr:
+          type: string
+          description: TON wallet address
+        username:
+          type: string
+          nullable: true
+        tonHandle:
+          type: string
+          nullable: true
+        xp:
+          type: integer
+          description: Total XP points
+        level:
+          type: integer
+          description: Current level
+        streakDays:
+          type: integer
+          description: Consecutive days saved
+        createdAt:
+          type: string
+          format: date-time
+
+    UserResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                user:
+                  $ref: '#/components/schemas/User'
+
+    ConnectRequest:
+      type: object
+      required: [address, signature, timestamp]
+      properties:
+        address:
+          type: string
+          description: TON wallet address
+        signature:
+          type: string
+          description: Wallet signature
+        timestamp:
+          type: integer
+          description: Unix timestamp
+
+    ConnectResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: JWT token
+                user:
+                  $ref: '#/components/schemas/User'
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 64
+        tonHandle:
+          type: string
+          maxLength: 128
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        xp:
+          type: integer
+        level:
+          type: integer
+
+    LeaderboardResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                leaderboard:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/LeaderboardEntry'
+
+    # Goal
+    Goal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        emoji:
+          type: string
+          nullable: true
+        targetUsd:
+          type: string
+          description: Target amount in USD
+        currentUsd:
+          type: string
+          description: Current saved amount in USD
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+        isArchived:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    GoalResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                goal:
+                  $ref: '#/components/schemas/Goal'
+
+    GoalsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                goals:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Goal'
+
+    CreateGoalRequest:
+      type: object
+      required: [title, targetUsd]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        emoji:
+          type: string
+          maxLength: 8
+        targetUsd:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+          description: Target amount in USD
+        dueDate:
+          type: string
+          format: date-time
+
+    UpdateGoalRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 256
+        emoji:
+          type: string
+          maxLength: 8
+        targetUsd:
+          type: string
+          pattern: '^\d+(\.\d{1,2})?$'
+        dueDate:
+          type: string
+          format: date-time
+          nullable: true
+
+    # Den
+    Den:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        emoji:
+          type: string
+          nullable: true
+        isPublic:
+          type: boolean
+        strategy:
+          type: string
+          enum: [steady, adventurous]
+        apr:
+          type: string
+          description: Annual percentage rate
+        totalDeposited:
+          type: string
+          description: Total TON deposited
+        memberCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    DenMember:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        username:
+          type: string
+        amount:
+          type: string
+          description: Member's deposited amount in TON
+
+    DenWithMembers:
+      allOf:
+        - $ref: '#/components/schemas/Den'
+        - type: object
+          properties:
+            members:
+              type: array
+              items:
+                $ref: '#/components/schemas/DenMember'
+
+    DenResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                den:
+                  $ref: '#/components/schemas/Den'
+
+    DenDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                den:
+                  $ref: '#/components/schemas/DenWithMembers'
+
+    DensResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                dens:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Den'
+
+    CreateDenRequest:
+      type: object
+      required: [name, strategy]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+        emoji:
+          type: string
+          maxLength: 8
+        isPublic:
+          type: boolean
+          default: true
+        strategy:
+          type: string
+          enum: [steady, adventurous]
+
+    JoinDenRequest:
+      type: object
+      required: [amountTon]
+      properties:
+        amountTon:
+          type: string
+          pattern: '^\d+(\.\d{1,8})?$'
+          description: Amount in TON to deposit
+
+    JoinDenResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                deposit:
+                  type: object
+                  properties:
+                    denId:
+                      type: string
+                      format: uuid
+                    amount:
+                      type: string
+                    txParams:
+                      type: object
+                      description: Transaction parameters for TonConnect
+                      properties:
+                        to:
+                          type: string
+                        amount:
+                          type: string
+                        payload:
+                          type: string
+
+    # Portfolio
+    Asset:
+      type: object
+      properties:
+        symbol:
+          type: string
+          example: TON
+        balance:
+          type: number
+          format: double
+        priceUsd:
+          type: number
+          format: double
+        change24h:
+          type: number
+          format: double
+        valueUsd:
+          type: number
+          format: double
+
+    Portfolio:
+      type: object
+      properties:
+        totalUsd:
+          type: number
+          format: double
+        dayChangePct:
+          type: number
+          format: double
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
+
+    PortfolioResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                portfolio:
+                  $ref: '#/components/schemas/Portfolio'
+
+    Price:
+      type: object
+      properties:
+        usd:
+          type: number
+          format: double
+        change24h:
+          type: number
+          format: double
+
+    PricesResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                prices:
+                  type: object
+                  additionalProperties:
+                    $ref: '#/components/schemas/Price'
+
+    # Transaction
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [deposit, withdraw, stake, unstake]
+        amount:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        txHash:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                transaction:
+                  $ref: '#/components/schemas/Transaction'
+
+    TransactionsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                transactions:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Transaction'
+
+    DepositRequest:
+      type: object
+      required: [type, targetId, amountTon]
+      properties:
+        type:
+          type: string
+          enum: [vault, goal, den]
+        targetId:
+          type: string
+          format: uuid
+        amountTon:
+          type: string
+          pattern: '^\d+(\.\d{1,8})?$'
+
+    WithdrawRequest:
+      type: object
+      required: [type, sourceId, amountTon]
+      properties:
+        type:
+          type: string
+          enum: [vault, goal, den]
+        sourceId:
+          type: string
+          format: uuid
+        amountTon:
+          type: string
+          pattern: '^\d+(\.\d{1,8})?$'
+
+    # Quest
+    Quest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        questKey:
+          type: string
+        title:
+          type: string
+        hint:
+          type: string
+        reward:
+          type: integer
+          description: XP reward
+        progress:
+          type: integer
+        completed:
+          type: boolean
+
+    QuestsResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                quests:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Quest'
+
+    ClaimQuestResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                claimed:
+                  type: boolean
+                xpAwarded:
+                  type: integer
+                newTotalXp:
+                  type: integer
+
+    # AI Chat
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        context:
+          type: object
+          description: Optional user context for personalized responses
+          properties:
+            portfolioUsd:
+              type: number
+            goalsCount:
+              type: integer
+            densCount:
+              type: integer
+            level:
+              type: integer
+
+    ChatResponse:
+      allOf:
+        - $ref: '#/components/schemas/Success'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                reply:
+                  type: string
+                  description: Foxy's response
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: Missing or invalid authorization header
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            error:
+              code: NOT_FOUND
+              message: Resource not found
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            error:
+              code: VALIDATION_ERROR
+              message: Invalid request body
