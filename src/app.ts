@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { swaggerUI } from '@hono/swagger-ui';
@@ -37,7 +38,7 @@ app.use('*', async (c, next) => {
 
 app.get('/openapi.yaml', async (c) => {
   try {
-    const yaml = await readFile(new URL('../openapi.yaml', import.meta.url), 'utf8');
+    const yaml = await readFile(join(process.cwd(), 'openapi.yaml'), 'utf8');
     return c.text(yaml, 200, {
       'content-type': 'application/yaml; charset=utf-8',
       'cache-control': 'public, max-age=300',
