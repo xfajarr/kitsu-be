@@ -4,5 +4,11 @@
       "source": "/(.*)",
       "destination": "/api/index"
     }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index"
+    }
   ]
 }
