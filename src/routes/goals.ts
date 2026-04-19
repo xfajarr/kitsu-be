@@ -324,7 +324,7 @@ goalRoutes.post('/:id/deposit', validateBody(depositGoalSchema), async (c) => {
   const body = c.get('validatedBody') as z.infer<typeof depositGoalSchema>;
   
   const goal = await db.query.goals.findFirst({
-    where: and(eq(goals.id, id), eq(goals.userId, userId)),
+    where: eq(goals.id, id),
   });
   
   if (!goal) {
@@ -381,7 +381,7 @@ goalRoutes.post('/:id/claim', async (c) => {
   }
   
   const goal = await db.query.goals.findFirst({
-    where: and(eq(goals.id, id), eq(goals.userId, userId)),
+    where: eq(goals.id, id),
   });
   
   if (!goal) {

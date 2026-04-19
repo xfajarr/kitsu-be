@@ -1,7 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { db } from '../db';
-import { users, dens, denDeposits, type Den } from '../db/schema';
+import { users, dens, denDeposits } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { Address } from '@ton/core';
@@ -134,34 +134,42 @@ function isAdminWallet(walletAddr: string) {
 denRoutes.get('/', async (c) => {
   const publicDens = await db.query.dens.findMany({
     where: eq(dens.isPublic, true),
-    orderBy: [desc(dens.memberCount)],
-    limit: 50,
   });
   const onchainEntries = await Promise.all(
     publicDens.map(async (den) => [den.id, den.contractAddress ? await getNestOnchainSnapshotSafe(den.contractAddress) : null] as const),
   );
   const onchainByDenId = new Map(onchainEntries);
+  const densWithOnchainState = publicDens
+    .map((d) => ({
+      id: d.id,
+      ownerId: d.ownerId,
+      name: d.name,
+      emoji: d.emoji,
+      isPublic: d.isPublic,
+      strategy: d.strategy,
+      contractAddress: d.contractAddress,
+      apr: d.apr,
+      totalDeposited: onchainByDenId.get(d.id)?.totalPrincipalTon || '0',
+      memberCount: onchainByDenId.get(d.id)?.memberCount ?? 0,
+      vaultValueTon: onchainByDenId.get(d.id)?.vaultValueTon || '0',
+      totalYieldTon: onchainByDenId.get(d.id)?.totalYieldTon || '0',
+      isOnchainSynced: !!onchainByDenId.get(d.id),
+      lastStrategySyncTime: onchainByDenId.get(d.id)?.lastStrategySyncTime || null,
+      createdAt: d.createdAt,
+    }))
+    .sort((a, b) => {
+      if (b.memberCount !== a.memberCount) {
+        return b.memberCount - a.memberCount;
+      }
+
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .slice(0, 50);
   
   return c.json({
     success: true,
     data: {
-      dens: publicDens.map(d => ({
-        id: d.id,
-        ownerId: d.ownerId,
-        name: d.name,
-        emoji: d.emoji,
-        isPublic: d.isPublic,
-        strategy: d.strategy,
-        contractAddress: d.contractAddress,
-        apr: d.apr,
-        totalDeposited: onchainByDenId.get(d.id)?.totalPrincipalTon || d.totalDeposited,
-        memberCount: onchainByDenId.get(d.id)?.memberCount ?? d.memberCount,
-        vaultValueTon: onchainByDenId.get(d.id)?.vaultValueTon || d.totalDeposited,
-        totalYieldTon: onchainByDenId.get(d.id)?.totalYieldTon || '0',
-        isOnchainSynced: !!onchainByDenId.get(d.id),
-        lastStrategySyncTime: onchainByDenId.get(d.id)?.lastStrategySyncTime || null,
-        createdAt: d.createdAt,
-      })),
+      dens: densWithOnchainState,
     },
   });
 });
@@ -177,57 +185,44 @@ denRoutes.get('/mine', async (c) => {
     }, 401);
   }
   
-  const deposits = await db.query.denDeposits.findMany({
-    where: eq(denDeposits.userId, user.id),
-    with: { den: true },
+  const trackedDens = await db.query.dens.findMany({
+    orderBy: [desc(dens.createdAt)],
   });
-
-  const totals = new Map<string, { den: Den; ton: number }>();
-  for (const row of deposits) {
-    if (!row.den) continue;
-    const prev = totals.get(row.denId);
-    const add = parseFloat(row.amountTon);
-    if (!prev) {
-      totals.set(row.denId, { den: row.den, ton: add });
-    } else {
-      prev.ton += add;
-    }
-  }
-
-  const denEntries = Array.from(totals.entries());
   const onchainEntries = await Promise.all(
-    denEntries.map(async ([denId, entry]) => [
-      denId,
-      entry.den.contractAddress ? await getNestOnchainSnapshotSafe(entry.den.contractAddress, user.walletAddr) : null,
-    ] as const),
+    trackedDens.map(async (den) => [den.id, den.contractAddress ? await getNestOnchainSnapshotSafe(den.contractAddress, user.walletAddr) : null] as const),
   );
   const onchainByDenId = new Map(onchainEntries);
+  const densWithPositions = trackedDens
+    .map((d) => ({ den: d, snapshot: onchainByDenId.get(d.id) || null }))
+    .filter(({ snapshot }) => !!snapshot && parseFloat(snapshot.sharesTon) > 0)
+    .map(({ den: d, snapshot }) => ({
+      id: d.id,
+      ownerId: d.ownerId,
+      name: d.name,
+      emoji: d.emoji,
+      isPublic: d.isPublic,
+      strategy: d.strategy,
+      contractAddress: d.contractAddress,
+      apr: d.apr,
+      totalDeposited: snapshot!.totalPrincipalTon,
+      memberCount: snapshot!.memberCount,
+      vaultValueTon: snapshot!.vaultValueTon,
+      totalYieldTon: snapshot!.totalYieldTon,
+      myDepositTon: snapshot!.principalTon,
+      myCurrentTon: snapshot!.currentTon,
+      myYieldTon: snapshot!.yieldTon,
+      mySharesTon: snapshot!.sharesTon,
+      canWithdraw: snapshot!.canWithdraw,
+      isOnchainSynced: true,
+      lastStrategySyncTime: snapshot!.lastStrategySyncTime || null,
+      createdAt: d.createdAt,
+    }))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return c.json({
     success: true,
     data: {
-      dens: denEntries.map(([denId, { den: d, ton }]) => ({
-        id: d.id,
-        ownerId: d.ownerId,
-        name: d.name,
-        emoji: d.emoji,
-        isPublic: d.isPublic,
-        strategy: d.strategy,
-        contractAddress: d.contractAddress,
-        apr: d.apr,
-        totalDeposited: onchainByDenId.get(denId)?.totalPrincipalTon || d.totalDeposited,
-        memberCount: onchainByDenId.get(denId)?.memberCount ?? d.memberCount,
-        vaultValueTon: onchainByDenId.get(denId)?.vaultValueTon || d.totalDeposited,
-        totalYieldTon: onchainByDenId.get(denId)?.totalYieldTon || '0',
-        myDepositTon: onchainByDenId.get(denId)?.principalTon || ton.toFixed(8),
-        myCurrentTon: onchainByDenId.get(denId)?.currentTon || ton.toFixed(8),
-        myYieldTon: onchainByDenId.get(denId)?.yieldTon || '0',
-        mySharesTon: onchainByDenId.get(denId)?.sharesTon || ton.toFixed(8),
-        canWithdraw: onchainByDenId.get(denId)?.canWithdraw ?? ton > 0,
-        isOnchainSynced: !!onchainByDenId.get(denId),
-        lastStrategySyncTime: onchainByDenId.get(denId)?.lastStrategySyncTime || null,
-        createdAt: d.createdAt,
-      })),
+      dens: densWithPositions,
     },
   });
 });
@@ -308,6 +303,7 @@ denRoutes.post('/', validateBody(createDenSchema), async (c) => {
 // GET /dens/:id - Get den details
 denRoutes.get('/:id', async (c) => {
   const { id } = c.req.param();
+  const user = await getCurrentUser(c);
   
   const den = await db.query.dens.findFirst({
     where: eq(dens.id, id),
@@ -340,6 +336,10 @@ denRoutes.get('/:id', async (c) => {
       amount: (currentAmount + depositAmount).toFixed(8),
     });
   }
+
+  const snapshot = den.contractAddress
+    ? await getNestOnchainSnapshotSafe(den.contractAddress, user?.walletAddr)
+    : null;
   
   return c.json({
     success: true,
@@ -353,8 +353,17 @@ denRoutes.get('/:id', async (c) => {
         strategy: den.strategy,
         contractAddress: den.contractAddress,
         apr: den.apr,
-        totalDeposited: den.totalDeposited,
-        memberCount: den.memberCount,
+        totalDeposited: snapshot?.totalPrincipalTon || den.totalDeposited,
+        vaultValueTon: snapshot?.vaultValueTon || den.totalDeposited,
+        totalYieldTon: snapshot?.totalYieldTon || '0',
+        memberCount: snapshot?.memberCount ?? den.memberCount,
+        myDepositTon: snapshot?.principalTon,
+        myCurrentTon: snapshot?.currentTon,
+        myYieldTon: snapshot?.yieldTon,
+        mySharesTon: snapshot?.sharesTon,
+        canWithdraw: snapshot?.canWithdraw,
+        isOnchainSynced: !!snapshot,
+        lastStrategySyncTime: snapshot?.lastStrategySyncTime || null,
         members: Array.from(memberBalances.values()),
         createdAt: den.createdAt,
       },

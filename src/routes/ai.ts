@@ -18,6 +18,10 @@ const chatSchema = z.object({
     densCount: z.number().optional(),
     level: z.number().optional(),
   }).optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).optional(),
 });
 
 // POST /ai/chat - Chat with Foxy AI
@@ -48,7 +52,8 @@ aiRoutes.post('/chat', validateBody(chatSchema), async (c) => {
   try {
     log.ai('Processing chat request', { message: message.slice(0, 50) });
     
-    const reply = await generateFoxyResponse(message, userContext);
+    const { history } = c.get('validatedBody') as z.infer<typeof chatSchema>;
+    const reply = await generateFoxyResponse(message, userContext, history);
     
     return c.json({
       success: true,

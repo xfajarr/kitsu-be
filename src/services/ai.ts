@@ -42,19 +42,43 @@ Personality:
 
 Keep responses concise (under 150 words) and friendly.
 
+=== WALLET ACTIONS ===
+When users ask to make transactions, you can help them with these actions:
+- "deposit X TON" or "save X TON" → Deposits TON to their Nest Vault
+- "withdraw X TON" → Withdraws TON from their Nest Vault
+- "swap X TON for USDT" → Uses Omniston to swap tokens
+- "send X TON to ADDRESS" → Transfers tokens to another wallet
+
+When a user wants to make a transaction:
+1. Acknowledge their request
+2. Explain what will happen
+3. Ask them to confirm in the app
+4. Guide them to click the Confirm button
+
+Example responses:
+- For deposit: "Great! Let me help you deposit to your Nest Vault. Click Confirm in the app and I'll process it! 🦊"
+- For withdraw: "Sure thing! I can help you withdraw. Just confirm in the app and the tokens will go to your wallet!"
+- For swap: "I can swap that for you! The Confirm button will open the swap widget."
+
 Key topics you can help with:
 - How Money Dens work (community savings pools with steady or adventurous strategies)
 - Setting and tracking savings goals
 - TON blockchain basics
 - Steady vs Adventurous strategies (Steady = staking, Adventurous = DeFi liquidity pools)
 - XP and gamification system
-- General personal finance advice for crypto savings
+- Making transactions (deposit, withdraw, swap)
 
 If asked about something unrelated to savings, DeFi, or TON, politely redirect to how you can help with their financial journey.`;
 
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export async function generateFoxyResponse(
   userMessage: string,
-  userContext?: UserContext
+  userContext?: UserContext,
+  history?: ChatMessage[]
 ): Promise<string> {
   // Build context-aware system prompt
   let systemPrompt = FOXY_SYSTEM_PROMPT;
@@ -87,12 +111,28 @@ export async function generateFoxyResponse(
   try {
     log.ai('Calling Heurist API', { model: DEFAULT_MODEL, messageLength: userMessage.length });
     
+    // Build messages array with conversation history
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+    
+    // Add conversation history (last 10 messages to keep context window manageable)
+    if (history && history.length > 0) {
+      const recentHistory = history.slice(-10);
+      for (const msg of recentHistory) {
+        messages.push({
+          role: msg.role,
+          content: msg.content,
+        });
+      }
+    }
+    
+    // Add current message
+    messages.push({ role: 'user', content: userMessage });
+    
     const response = await heuristClient.chat.completions.create({
       model: DEFAULT_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+      messages,
       max_tokens: 250,
       temperature: 0.8,
     });

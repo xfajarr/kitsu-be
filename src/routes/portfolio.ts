@@ -13,25 +13,36 @@ export const portfolioRoutes = new Hono();
 // GET /portfolio - User's full portfolio
 portfolioRoutes.get('/', async (c) => {
   const authHeader = c.req.header('Authorization');
+  let userId: string | null = null;
+  let walletAddr: string | null = null;
   
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return c.json({
-      success: false,
-      error: { code: 'UNAUTHORIZED', message: 'Authentication required' },
-    }, 401);
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    const payload = await jwtService.verifyToken(token);
+    if (payload) {
+      userId = payload.userId;
+      walletAddr = payload.walletAddr;
+    }
   }
   
-  const token = authHeader.slice(7);
-  const payload = await jwtService.verifyToken(token);
-  
-  if (!payload) {
-    return c.json({
-      success: false,
-      error: { code: 'INVALID_TOKEN', message: 'Invalid or expired token' },
-    }, 401);
+  // If no auth, try to get wallet from query param
+  if (!walletAddr) {
+    walletAddr = c.req.query('wallet') || null;
   }
   
-  const walletAddr = payload.walletAddr;
+  // If still no wallet, return empty portfolio
+  if (!walletAddr) {
+    return c.json({
+      success: true,
+      data: {
+        portfolio: {
+          totalUsd: 0,
+          dayChangePct: 0,
+          assets: [],
+        },
+      },
+    });
+  }
   
   try {
     // Fetch wallet balance from TonCenter
@@ -73,15 +84,17 @@ portfolioRoutes.get('/', async (c) => {
       });
     }
     
-    const [userGoals, userDenDeposits] = await Promise.all([
-      db.query.goals.findMany({
-        where: and(eq(goals.userId, payload.userId), eq(goals.isArchived, false)),
-      }),
-      db.query.denDeposits.findMany({
-        where: eq(denDeposits.userId, payload.userId),
-        with: { den: true },
-      }),
-    ]);
+    const [userGoals, userDenDeposits] = userId
+      ? await Promise.all([
+          db.query.goals.findMany({
+            where: and(eq(goals.userId, userId), eq(goals.isArchived, false)),
+          }),
+          db.query.denDeposits.findMany({
+            where: eq(denDeposits.userId, userId),
+            with: { den: true },
+          }),
+        ])
+      : [[], []];
 
     const uniqueDenContracts = Array.from(
       new Map(
