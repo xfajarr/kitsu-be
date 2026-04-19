@@ -116,7 +116,7 @@ app.get('/', (c) => {
       auth: ['POST /auth/connect', 'GET /auth/me'],
       users: ['GET /users/:id', 'PATCH /users/me', 'GET /users/leaderboard'],
       goals: ['GET /goals', 'POST /goals', 'PATCH /goals/:id', 'DELETE /goals/:id'],
-      dens: ['GET /dens', 'GET /dens/mine', 'POST /dens', 'GET /dens/:id', 'POST /dens/:id/join', 'POST /dens/:id/leave'],
+      dens: ['GET /dens', 'GET /dens/mine', 'POST /dens', 'GET /dens/:id', 'POST /dens/:id/join', 'POST /dens/:id/join/confirm', 'POST /dens/:id/leave'],
       portfolio: ['GET /portfolio', 'GET /portfolio/prices'],
       transactions: ['POST /transactions/deposit', 'POST /transactions/withdraw', 'POST /transactions/stake', 'POST /transactions/unstake', 'GET /transactions/history'],
       quests: ['GET /quests', 'POST /quests/:id/claim'],

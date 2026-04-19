@@ -8,6 +8,7 @@ import { jwtService } from '../lib/jwt';
 import { log } from '../lib/logger';
 import { priceService } from '../services/prices';
 import { buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalClaimMessage } from '../services/contracts';
+import { getGoalOnchainSnapshotSafe } from '../services/vaults';
 
 export const goalRoutes = new Hono();
 
@@ -59,11 +60,55 @@ goalRoutes.get('/', async (c) => {
     where: and(eq(goals.userId, userId), eq(goals.isArchived, false)),
     orderBy: (goals, { desc }) => [desc(goals.createdAt)],
   });
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  if (!user) {
+    return c.json({
+      success: false,
+      error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+    }, 404);
+  }
+
+  const tonUsd = await priceService.tonToUsd(1).catch(() => null);
+  const onchainEntries = await Promise.all(
+    userGoals.map(async (goal) => [
+      goal.id,
+      goal.contractAddress ? await getGoalOnchainSnapshotSafe(goal.contractAddress, user.walletAddr) : null,
+    ] as const),
+  );
+  const onchainByGoalId = new Map(onchainEntries);
   
   return c.json({
     success: true,
     data: {
       goals: userGoals.map(g => ({
+        ...(onchainByGoalId.get(g.id)
+          ? {
+              currentTon: onchainByGoalId.get(g.id)!.currentTon,
+              currentUsd: tonUsd !== null ? (parseFloat(onchainByGoalId.get(g.id)!.currentTon) * tonUsd).toFixed(2) : g.currentUsd,
+              principalTon: onchainByGoalId.get(g.id)!.principalTon,
+              yieldTon: onchainByGoalId.get(g.id)!.yieldTon,
+              vaultValueTon: onchainByGoalId.get(g.id)!.vaultValueTon,
+              totalPrincipalTon: onchainByGoalId.get(g.id)!.totalPrincipalTon,
+              totalYieldTon: onchainByGoalId.get(g.id)!.totalYieldTon,
+              canClaim: onchainByGoalId.get(g.id)!.canClaim,
+              isOnchainSynced: true,
+              lastStrategySyncTime: onchainByGoalId.get(g.id)!.lastStrategySyncTime || null,
+            }
+          : {
+              currentTon: g.currentTon,
+              currentUsd: g.currentUsd,
+              principalTon: g.currentTon,
+              yieldTon: '0',
+              vaultValueTon: g.currentTon,
+              totalPrincipalTon: g.currentTon,
+              totalYieldTon: '0',
+              canClaim: false,
+              isOnchainSynced: false,
+              lastStrategySyncTime: null,
+            }),
         id: g.id,
         title: g.title,
         description: g.description,
@@ -72,9 +117,7 @@ goalRoutes.get('/', async (c) => {
         strategy: g.strategy,
         contractAddress: g.contractAddress,
         targetTon: g.targetTon,
-        currentTon: g.currentTon,
         targetUsd: g.targetUsd,
-        currentUsd: g.currentUsd,
         dueDate: g.dueDate,
         isArchived: g.isArchived,
         createdAt: g.createdAt,
@@ -326,6 +369,16 @@ goalRoutes.post('/:id/claim', async (c) => {
   }
   
   const { id } = c.req.param();
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  if (!user) {
+    return c.json({
+      success: false,
+      error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+    }, 404);
+  }
   
   const goal = await db.query.goals.findFirst({
     where: and(eq(goals.id, id), eq(goals.userId, userId)),
@@ -343,6 +396,14 @@ goalRoutes.post('/:id/claim', async (c) => {
       success: false,
       error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' },
     }, 503);
+  }
+
+  const snapshot = await getGoalOnchainSnapshotSafe(goal.contractAddress, user.walletAddr);
+  if (snapshot && !snapshot.canClaim) {
+    return c.json({
+      success: false,
+      error: { code: 'GOAL_NOT_SETTLED', message: 'Goal funds are still locked in strategy or target is not settled yet' },
+    }, 400);
   }
   
   const txMessage = buildGoalClaimMessage(goal.contractAddress);

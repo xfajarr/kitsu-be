@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { db } from '../db';
-import { denDeposits, dens } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { denDeposits, goals } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
 import { jwtService } from '../lib/jwt';
 import { tonCenter } from '../services/toncenter';
 import { priceService } from '../services/prices';
 import { log } from '../lib/logger';
+import { getGoalOnchainSnapshotSafe, getNestOnchainSnapshotSafe } from '../services/vaults';
 
 export const portfolioRoutes = new Hono();
 
@@ -72,25 +73,35 @@ portfolioRoutes.get('/', async (c) => {
       });
     }
     
-    // Fetch Nest vault deposits from DB - user's own dens
-    const userDens = await db.query.dens.findMany({
-      where: eq(dens.ownerId, payload.userId),
-    });
-    
-    let denDepositTotal = 0;
-    const userDenIds = userDens.map(d => d.id);
-    
-    for (const denId of userDenIds) {
-      const deposits = await db.query.denDeposits.findMany({
-        where: eq(denDeposits.denId, denId),
-      });
-      for (const dep of deposits) {
-        denDepositTotal += parseFloat(dep.amountTon);
-      }
-    }
-    
-    // Note: Goals don't have deposit tracking yet - placeholder
-    const goalDepositTotal = 0;
+    const [userGoals, userDenDeposits] = await Promise.all([
+      db.query.goals.findMany({
+        where: and(eq(goals.userId, payload.userId), eq(goals.isArchived, false)),
+      }),
+      db.query.denDeposits.findMany({
+        where: eq(denDeposits.userId, payload.userId),
+        with: { den: true },
+      }),
+    ]);
+
+    const uniqueDenContracts = Array.from(
+      new Map(
+        userDenDeposits
+          .filter((deposit) => deposit.den?.contractAddress)
+          .map((deposit) => [deposit.denId, deposit.den!.contractAddress!]),
+      ).entries(),
+    );
+
+    const [goalSnapshots, denSnapshots] = await Promise.all([
+      Promise.all(
+        userGoals.map((goal) =>
+          goal.contractAddress ? getGoalOnchainSnapshotSafe(goal.contractAddress, walletAddr) : Promise.resolve(null),
+        ),
+      ),
+      Promise.all(uniqueDenContracts.map(([, contractAddress]) => getNestOnchainSnapshotSafe(contractAddress, walletAddr))),
+    ]);
+
+    const goalDepositTotal = goalSnapshots.reduce((sum, snapshot) => sum + (snapshot ? parseFloat(snapshot.currentTon) : 0), 0);
+    const denDepositTotal = denSnapshots.reduce((sum, snapshot) => sum + (snapshot ? parseFloat(snapshot.currentTon) : 0), 0);
     
     // Total from Nest vaults + Goals
     const nestValue = denDepositTotal * tonPrice;
