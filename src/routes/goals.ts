@@ -7,7 +7,7 @@ import { validateBody } from '../middleware/validate';
 import { jwtService } from '../lib/jwt';
 import { log } from '../lib/logger';
 import { priceService } from '../services/prices';
-import { buildGoalDeploymentMessages } from '../services/contracts';
+import { buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalClaimMessage } from '../services/contracts';
 
 export const goalRoutes = new Hono();
 
@@ -29,6 +29,10 @@ const updateGoalSchema = z.object({
   visibility: z.enum(['private', 'public']).optional(),
   strategy: z.enum(['tonstakers', 'stonfi']).optional(),
   dueDate: z.string().datetime().optional().nullable(),
+});
+
+const depositGoalSchema = z.object({
+  amountTon: z.string().regex(/^\d+(\.\d{1,8})?$/),
 });
 
 async function getCurrentUserId(c: any): Promise<string | null> {
@@ -259,5 +263,99 @@ goalRoutes.delete('/:id', async (c) => {
   return c.json({
     success: true,
     data: { archived: true },
+  });
+});
+
+// POST /goals/:id/deposit - Deposit to goal
+goalRoutes.post('/:id/deposit', validateBody(depositGoalSchema), async (c) => {
+  const userId = await getCurrentUserId(c);
+  
+  if (!userId) {
+    return c.json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: 'Authentication required' },
+    }, 401);
+  }
+  
+  const { id } = c.req.param();
+  const body = c.get('validatedBody') as z.infer<typeof depositGoalSchema>;
+  
+  const goal = await db.query.goals.findFirst({
+    where: and(eq(goals.id, id), eq(goals.userId, userId)),
+  });
+  
+  if (!goal) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Goal not found' },
+    }, 404);
+  }
+  
+  if (!goal.contractAddress) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' },
+    }, 503);
+  }
+  
+  const txMessage = buildGoalDepositMessage(goal.contractAddress, body.amountTon, goal.strategy as 'tonstakers' | 'stonfi');
+  
+  log.api('Goal deposit', { userId, goalId: id, amount: body.amountTon });
+  
+  return c.json({
+    success: true,
+    data: {
+      deposit: {
+        goalId: id,
+        amount: body.amountTon,
+        txParams: { messages: [txMessage] },
+      },
+    },
+  });
+});
+
+// POST /goals/:id/claim - Claim from goal (withdraw principal + yield)
+goalRoutes.post('/:id/claim', async (c) => {
+  const userId = await getCurrentUserId(c);
+  
+  if (!userId) {
+    return c.json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: 'Authentication required' },
+    }, 401);
+  }
+  
+  const { id } = c.req.param();
+  
+  const goal = await db.query.goals.findFirst({
+    where: and(eq(goals.id, id), eq(goals.userId, userId)),
+  });
+  
+  if (!goal) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Goal not found' },
+    }, 404);
+  }
+  
+  if (!goal.contractAddress) {
+    return c.json({
+      success: false,
+      error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' },
+    }, 503);
+  }
+  
+  const txMessage = buildGoalClaimMessage(goal.contractAddress);
+  
+  log.api('Goal claim', { userId, goalId: id });
+  
+  return c.json({
+    success: true,
+    data: {
+      claim: {
+        goalId: id,
+        txParams: { messages: [txMessage] },
+      },
+    },
   });
 });

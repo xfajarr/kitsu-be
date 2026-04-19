@@ -1,4 +1,7 @@
 import { Hono } from 'hono';
+import { db } from '../db';
+import { denDeposits, dens } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { jwtService } from '../lib/jwt';
 import { tonCenter } from '../services/toncenter';
 import { priceService } from '../services/prices';
@@ -42,8 +45,8 @@ portfolioRoutes.get('/', async (c) => {
     const prices = await priceService.getPrices();
     const tonPrice = prices.TON?.usd ?? 0;
     
-    // Build assets list
-    const assets = [
+    // Build assets list - wallet only
+    const walletAssets = [
       {
         symbol: 'TON',
         balance: tonBalance,
@@ -60,7 +63,7 @@ portfolioRoutes.get('/', async (c) => {
       const balance = parseInt(jetton.balance) / Math.pow(10, decimals);
       const price = prices[symbol]?.usd || 0;
       
-      assets.push({
+      walletAssets.push({
         symbol,
         balance,
         priceUsd: price,
@@ -69,7 +72,58 @@ portfolioRoutes.get('/', async (c) => {
       });
     }
     
-    const totalUsd = assets.reduce((sum, a) => sum + a.valueUsd, 0);
+    // Fetch Nest vault deposits from DB - user's own dens
+    const userDens = await db.query.dens.findMany({
+      where: eq(dens.ownerId, payload.userId),
+    });
+    
+    let denDepositTotal = 0;
+    const userDenIds = userDens.map(d => d.id);
+    
+    for (const denId of userDenIds) {
+      const deposits = await db.query.denDeposits.findMany({
+        where: eq(denDeposits.denId, denId),
+      });
+      for (const dep of deposits) {
+        denDepositTotal += parseFloat(dep.amountTon);
+      }
+    }
+    
+    // Note: Goals don't have deposit tracking yet - placeholder
+    const goalDepositTotal = 0;
+    
+    // Total from Nest vaults + Goals
+    const nestValue = denDepositTotal * tonPrice;
+    const goalValue = goalDepositTotal * tonPrice;
+    
+    // Combine all: wallet + Nest vaults + Goals
+    const allAssets = [
+      ...walletAssets.filter(a => a.valueUsd > 0 || a.symbol === 'TON'),
+    ];
+    
+    // Add Nest/Goal as separate entries
+    if (denDepositTotal > 0) {
+      allAssets.push({
+        symbol: 'NEST',
+        balance: denDepositTotal,
+        priceUsd: tonPrice,
+        change24h: 0,
+        valueUsd: nestValue,
+      });
+    }
+    
+    if (goalDepositTotal > 0) {
+      allAssets.push({
+        symbol: 'GOAL',
+        balance: goalDepositTotal,
+        priceUsd: tonPrice,
+        change24h: 0,
+        valueUsd: goalValue,
+      });
+    }
+    
+    const walletTotal = walletAssets.reduce((sum, a) => sum + a.valueUsd, 0);
+    const totalUsd = walletTotal + nestValue + goalValue;
     
     return c.json({
       success: true,
@@ -77,7 +131,9 @@ portfolioRoutes.get('/', async (c) => {
         portfolio: {
           totalUsd,
           dayChangePct: prices.TON?.change24h || 0,
-          assets: assets.filter(a => a.valueUsd > 0 || a.symbol === 'TON'),
+          assets: allAssets,
+          nestTotal: nestValue,
+          goalTotal: goalValue,
         },
       },
     });
