@@ -1,0 +1,1 @@
+ALTER TABLE "users" ALTER COLUMN "wallet_addr" TYPE varchar(80);

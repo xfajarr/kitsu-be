@@ -3,10 +3,11 @@ import { db } from '../db';
 import { users, dens, denDeposits, type Den } from '../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
+import { Address } from '@ton/core';
 import { validateBody } from '../middleware/validate';
 import { jwtService } from '../lib/jwt';
 import { log } from '../lib/logger';
-import { buildNestDeploymentMessages, buildNestDepositMessage, mapDenStrategy } from '../services/contracts';
+import { buildNestDeploymentMessages, buildNestDepositMessage, buildNestWithdrawMessage, mapDenStrategy, strategyDefaults } from '../services/contracts';
 
 export const denRoutes = new Hono();
 
@@ -15,6 +16,7 @@ const createDenSchema = z.object({
   emoji: z.string().max(8).optional(),
   isPublic: z.boolean().default(true),
   strategy: z.enum(['steady', 'adventurous']),
+  contractAddress: z.string().min(1).max(80).optional(),
 });
 
 const joinDenSchema = z.object({
@@ -42,7 +44,15 @@ async function getCurrentUser(c: any) {
 
 function isAdminWallet(walletAddr: string) {
   const adminWallet = process.env.KITSU_ADMIN_WALLET?.trim();
-  return !!adminWallet && adminWallet === walletAddr;
+  if (!adminWallet) {
+    return false;
+  }
+
+  try {
+    return Address.parse(walletAddr).toRawString() === Address.parse(adminWallet).toRawString();
+  } catch {
+    return adminWallet === walletAddr;
+  }
 }
 
 // GET /dens - List public dens
@@ -141,12 +151,21 @@ denRoutes.post('/', validateBody(createDenSchema), async (c) => {
   }
   
   const body = c.get('validatedBody') as z.infer<typeof createDenSchema>;
-  const deployment = await buildNestDeploymentMessages({
-    owner: user.walletAddr,
-    name: body.name,
-    isPublic: body.isPublic,
-    strategy: mapDenStrategy(body.strategy),
-  });
+  const strategy = mapDenStrategy(body.strategy);
+  const defaults = strategyDefaults(strategy);
+  const deployment = body.contractAddress
+    ? {
+        address: body.contractAddress,
+        strategyContract: defaults.strategyContract.toString(),
+        aprBps: defaults.aprBps,
+        messages: [] as Array<{ address: string; amount: string; payload?: string; stateInit?: string }>,
+      }
+    : await buildNestDeploymentMessages({
+        owner: user.walletAddr,
+        name: body.name,
+        isPublic: body.isPublic,
+        strategy,
+      });
   const apr = (Number(deployment.aprBps) / 100).toFixed(2);
   
   const [newDen] = await db.insert(dens).values({
@@ -388,11 +407,7 @@ denRoutes.post('/:id/leave', async (c) => {
       left: true,
       amount: totalAmount.toFixed(8),
       txParams: {
-        messages: [{
-          address: den.contractAddress,
-          amount: totalAmount.toFixed(8),
-          payload: 'leave_den',
-        }],
+        messages: [buildNestWithdrawMessage(den.contractAddress, totalAmount.toFixed(8))],
       },
     },
   });

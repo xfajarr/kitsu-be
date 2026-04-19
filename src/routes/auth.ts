@@ -7,6 +7,7 @@ import { validateBody } from '../middleware/validate';
 import { jwtService } from '../lib/jwt';
 import { walletService } from '../lib/wallet';
 import { log } from '../lib/logger';
+import { Address } from '@ton/core';
 
 export const authRoutes = new Hono();
 
@@ -28,6 +29,19 @@ function allowLocalWalletBypass(origin: string | undefined) {
   const flag = process.env.ALLOW_LOCAL_WALLET_AUTH_BYPASS;
   const enabled = flag ? flag === 'true' : process.env.NODE_ENV !== 'production';
   return enabled && isLocalOrigin(origin);
+}
+
+function isAdminWallet(walletAddr: string) {
+  const adminWallet = process.env.KITSU_ADMIN_WALLET?.trim();
+  if (!adminWallet) {
+    return false;
+  }
+
+  try {
+    return Address.parse(walletAddr).toRawString() === Address.parse(adminWallet).toRawString();
+  } catch {
+    return walletAddr === adminWallet;
+  }
 }
 
 // POST /auth/connect - Verify wallet signature and issue JWT
@@ -86,6 +100,7 @@ authRoutes.post('/connect', validateBody(connectSchema), async (c) => {
       user: {
         id: user.id,
         walletAddr: user.walletAddr,
+        isAdmin: isAdminWallet(user.walletAddr),
         username: user.username,
         tonHandle: user.tonHandle,
         xp: user.xp,
@@ -135,6 +150,7 @@ authRoutes.get('/me', async (c) => {
       user: {
         id: user.id,
         walletAddr: user.walletAddr,
+        isAdmin: isAdminWallet(user.walletAddr),
         username: user.username,
         tonHandle: user.tonHandle,
         xp: user.xp,

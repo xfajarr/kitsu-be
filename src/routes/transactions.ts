@@ -8,7 +8,7 @@ import { jwtService } from '../lib/jwt';
 import { gamificationService } from '../services/gamification';
 import { priceService } from '../services/prices';
 import { log } from '../lib/logger';
-import { buildGoalDepositMessage, buildNestDepositMessage, mapDenStrategy } from '../services/contracts';
+import { buildGoalClaimMessage, buildGoalDepositMessage, buildNestDepositMessage, buildNestWithdrawMessage, mapDenStrategy } from '../services/contracts';
 
 export const transactionRoutes = new Hono();
 
@@ -150,10 +150,20 @@ transactionRoutes.post('/withdraw', validateBody(withdrawSchema), async (c) => {
   
   const body = c.get('validatedBody') as z.infer<typeof withdrawSchema>;
   
-  // Validate source and balance
-  let sourceAddress: string;
+  let txMessages: Array<{ address: string; amount: string; payload?: string; stateInit?: string }>;
   
   if (body.type === 'den') {
+    const den = await db.query.dens.findFirst({
+      where: eq(dens.id, body.sourceId),
+    });
+
+    if (!den || !den.contractAddress) {
+      return c.json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Nest not found' },
+      }, 404);
+    }
+
     const deposits = await db.query.denDeposits.findMany({
       where: and(eq(denDeposits.denId, body.sourceId), eq(denDeposits.userId, userId)),
     });
@@ -167,9 +177,22 @@ transactionRoutes.post('/withdraw', validateBody(withdrawSchema), async (c) => {
       }, 400);
     }
     
-    sourceAddress = process.env.DEN_VAULT_ADDRESS || '';
+    txMessages = [buildNestWithdrawMessage(den.contractAddress, body.amountTon)];
+  } else if (body.type === 'goal') {
+    const goal = await db.query.goals.findFirst({
+      where: and(eq(goals.id, body.sourceId), eq(goals.userId, userId)),
+    });
+
+    if (!goal || !goal.contractAddress) {
+      return c.json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Goal not found' },
+      }, 404);
+    }
+
+    txMessages = [buildGoalClaimMessage(goal.contractAddress)];
   } else {
-    sourceAddress = process.env.VAULT_ADDRESS || '';
+    txMessages = [];
   }
   
   log.api('Withdraw initiated', { userId, type: body.type, amount: body.amountTon });
@@ -182,9 +205,7 @@ transactionRoutes.post('/withdraw', validateBody(withdrawSchema), async (c) => {
         type: 'withdraw',
         amount: body.amountTon,
         txParams: {
-          to: sourceAddress,
-          amount: body.amountTon,
-          payload: `withdraw_${body.type}`,
+          messages: txMessages,
         },
         status: 'pending',
       },
