@@ -12,7 +12,7 @@ export function validateBody<T extends z.ZodTypeAny>(schema: T) {
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new AppError(
-          JSON.stringify(error.errors),
+          JSON.stringify(error.issues),
           400,
           'VALIDATION_ERROR'
         );
@@ -32,7 +32,7 @@ export function validateQuery<T extends z.ZodTypeAny>(schema: T) {
     } catch (error) {
       if (error instanceof z.ZodError) {
         throw new AppError(
-          JSON.stringify(error.errors),
+          JSON.stringify(error.issues),
           400,
           'VALIDATION_ERROR'
         );

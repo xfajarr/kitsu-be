@@ -62,6 +62,9 @@ export const logger = {
 
 // Context-specific loggers
 export const log = {
+  debug: (context: string, message: string, data?: any) => logger.debug(context, message, data),
+  info: (context: string, message: string, data?: any) => logger.info(context, message, data),
+  warn: (context: string, message: string, data?: any) => logger.warn(context, message, data),
   api: (message: string, data?: any) => logger.info('API', message, data),
   auth: (message: string, data?: any) => logger.info('AUTH', message, data),
   db: (message: string, data?: any) => logger.info('DB', message, data),
