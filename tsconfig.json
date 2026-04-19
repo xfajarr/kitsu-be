@@ -7,6 +7,8 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "skipLibCheck": true,
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   }
 }
