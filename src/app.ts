@@ -2,7 +2,6 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { swaggerUI } from '@hono/swagger-ui';
 import { notFoundHandler, errorHandler } from './middleware/error';
 import { healthRoutes } from './routes/health';
 import { authRoutes } from './routes/auth';
@@ -56,7 +55,26 @@ app.get('/openapi.yaml', async (c) => {
   }
 });
 
-app.get('/docs', swaggerUI({ url: '/openapi.yaml' }));
+app.get('/docs', (c) => {
+  return c.html(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kitsu API Docs</title>
+    <style>
+      body { font-family: system-ui, sans-serif; padding: 32px; max-width: 720px; margin: 0 auto; }
+      code { background: #f4f4f5; padding: 2px 6px; border-radius: 6px; }
+      a { color: #2563eb; }
+    </style>
+  </head>
+  <body>
+    <h1>Kitsu API Docs</h1>
+    <p>OpenAPI spec tersedia di <a href="/openapi.yaml"><code>/openapi.yaml</code></a>.</p>
+    <p>Gunakan spec itu di Swagger Editor/Postman kalau butuh UI interaktif.</p>
+  </body>
+</html>`);
+});
 
 app.route('/health', healthRoutes);
 app.route('/auth', authRoutes);
