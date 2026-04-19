@@ -1,5 +1,5 @@
 // JWT Service for authentication
-import { SignJWT, jwtVerify } from 'jose';
+import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'default-secret-change-in-production'
@@ -7,7 +7,7 @@ const JWT_SECRET = new TextEncoder().encode(
 
 const JWT_EXPIRES_IN = '7d';
 
-export interface JwtPayload {
+export interface JwtPayload extends JWTPayload {
   userId: string;
   walletAddr: string;
 }
