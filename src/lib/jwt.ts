@@ -12,8 +12,13 @@ export interface JwtPayload {
   exp?: number;
 }
 
-function toBase64Url(input: string | Buffer) {
-  return Buffer.from(input)
+function toBase64Url(input: string | Uint8Array | Buffer) {
+  const buffer = typeof input === 'string'
+    ? Buffer.from(input)
+    : Buffer.isBuffer(input)
+      ? input
+      : Buffer.from(input);
+  return buffer
     .toString('base64')
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -62,7 +67,7 @@ export async function verifyToken(token: string): Promise<JwtPayload | null> {
     const receivedSignature = fromBase64Url(encodedSignature);
     if (
       expectedSignature.length !== receivedSignature.length ||
-      !timingSafeEqual(expectedSignature, receivedSignature)
+      !timingSafeEqual(new Uint8Array(expectedSignature), new Uint8Array(receivedSignature))
     ) {
       return null;
     }

@@ -1,14 +1,18 @@
 {
-  "rewrites": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/api/index"
+      "src": "src/index.ts",
+      "use": "@vercel/node",
+      "config": {
+        "runtime": "nodejs20"
+      }
     }
   ],
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/index"
+      "src": "/(.*)",
+      "dest": "/src/index.ts"
     }
   ]
 }

@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import { db } from '../db';
 import { users, goals } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validate';
 import { jwtService } from '../lib/jwt';
 import { log } from '../lib/logger';
 import { priceService } from '../services/prices';
-import { buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalClaimMessage } from '../services/contracts';
+import { buildGoalClaimMessage, buildGoalConfigureMessage, buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalSyncYieldMessage, buildGoalTonstakersUnstakeMessage } from '../services/contracts';
 import { getGoalOnchainSnapshotSafe } from '../services/vaults';
+import { tonCenter } from '../services/toncenter';
 
 export const goalRoutes = new Hono();
 
@@ -36,6 +37,10 @@ const depositGoalSchema = z.object({
   amountTon: z.string().regex(/^\d+(\.\d{1,8})?$/),
 });
 
+const unwindTonstakersSchema = z.object({
+  mode: z.enum(['standard', 'instant', 'best-rate']).default('best-rate'),
+});
+
 async function getCurrentUserId(c: any): Promise<string | null> {
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -43,6 +48,81 @@ async function getCurrentUserId(c: any): Promise<string | null> {
   const token = authHeader.slice(7);
   const payload = await jwtService.verifyToken(token);
   return payload?.userId || null;
+}
+
+async function getCurrentUser(c: any) {
+  const userId = await getCurrentUserId(c);
+  if (!userId) {
+    return null;
+  }
+
+  return await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+}
+
+async function mapGoalsWithSnapshots(goalList: any[], walletAddr?: string) {
+  const tonUsd = await priceService.tonToUsd(1).catch(() => null);
+  const onchainEntries = await Promise.all(
+    goalList.map(async (goal) => [
+      goal.id,
+      goal.contractAddress ? await getGoalOnchainSnapshotSafe(goal.contractAddress, walletAddr) : null,
+    ] as const),
+  );
+  const onchainByGoalId = new Map(onchainEntries);
+
+  return goalList.map((g) => ({
+    ...(onchainByGoalId.get(g.id)
+      ? {
+          currentTon: onchainByGoalId.get(g.id)!.currentTon,
+          currentUsd: tonUsd !== null ? (parseFloat(onchainByGoalId.get(g.id)!.currentTon) * tonUsd).toFixed(2) : g.currentUsd,
+          principalTon: onchainByGoalId.get(g.id)!.principalTon,
+          yieldTon: onchainByGoalId.get(g.id)!.yieldTon,
+          vaultValueTon: onchainByGoalId.get(g.id)!.vaultValueTon,
+          totalPrincipalTon: onchainByGoalId.get(g.id)!.totalPrincipalTon,
+          totalYieldTon: onchainByGoalId.get(g.id)!.totalYieldTon,
+          canClaim: onchainByGoalId.get(g.id)!.canClaim,
+          canUnwind: onchainByGoalId.get(g.id)!.canUnwind,
+          tsTonBalance: onchainByGoalId.get(g.id)!.tsTonBalance,
+          projectedVaultValueTon: onchainByGoalId.get(g.id)!.projectedVaultValueTon,
+          liquidTonBalance: onchainByGoalId.get(g.id)!.liquidTonBalance,
+          syncYieldTon: onchainByGoalId.get(g.id)!.syncYieldTon,
+          isOnchainSynced: true,
+          isLiveValue: onchainByGoalId.get(g.id)!.isLiveValue,
+          lastStrategySyncTime: onchainByGoalId.get(g.id)!.lastStrategySyncTime || null,
+        }
+      : {
+          currentTon: g.currentTon,
+          currentUsd: g.currentUsd,
+          principalTon: g.currentTon,
+          yieldTon: '0',
+          vaultValueTon: g.currentTon,
+          totalPrincipalTon: g.currentTon,
+          totalYieldTon: '0',
+          canClaim: false,
+          canUnwind: false,
+          tsTonBalance: null,
+          projectedVaultValueTon: null,
+          liquidTonBalance: '0',
+          syncYieldTon: null,
+          isOnchainSynced: false,
+          isLiveValue: false,
+          lastStrategySyncTime: null,
+        }),
+    id: g.id,
+    userId: g.userId,
+    title: g.title,
+    description: g.description,
+    emoji: g.emoji,
+    visibility: g.visibility,
+    strategy: g.strategy,
+    contractAddress: g.contractAddress,
+    targetTon: g.targetTon,
+    targetUsd: g.targetUsd,
+    dueDate: g.dueDate,
+    isArchived: g.isArchived,
+    createdAt: g.createdAt,
+  }));
 }
 
 // GET /goals - List user's goals
@@ -71,57 +151,28 @@ goalRoutes.get('/', async (c) => {
     }, 404);
   }
 
-  const tonUsd = await priceService.tonToUsd(1).catch(() => null);
-  const onchainEntries = await Promise.all(
-    userGoals.map(async (goal) => [
-      goal.id,
-      goal.contractAddress ? await getGoalOnchainSnapshotSafe(goal.contractAddress, user.walletAddr) : null,
-    ] as const),
-  );
-  const onchainByGoalId = new Map(onchainEntries);
+  const goalsWithSnapshots = await mapGoalsWithSnapshots(userGoals, user.walletAddr);
   
   return c.json({
     success: true,
     data: {
-      goals: userGoals.map(g => ({
-        ...(onchainByGoalId.get(g.id)
-          ? {
-              currentTon: onchainByGoalId.get(g.id)!.currentTon,
-              currentUsd: tonUsd !== null ? (parseFloat(onchainByGoalId.get(g.id)!.currentTon) * tonUsd).toFixed(2) : g.currentUsd,
-              principalTon: onchainByGoalId.get(g.id)!.principalTon,
-              yieldTon: onchainByGoalId.get(g.id)!.yieldTon,
-              vaultValueTon: onchainByGoalId.get(g.id)!.vaultValueTon,
-              totalPrincipalTon: onchainByGoalId.get(g.id)!.totalPrincipalTon,
-              totalYieldTon: onchainByGoalId.get(g.id)!.totalYieldTon,
-              canClaim: onchainByGoalId.get(g.id)!.canClaim,
-              isOnchainSynced: true,
-              lastStrategySyncTime: onchainByGoalId.get(g.id)!.lastStrategySyncTime || null,
-            }
-          : {
-              currentTon: g.currentTon,
-              currentUsd: g.currentUsd,
-              principalTon: g.currentTon,
-              yieldTon: '0',
-              vaultValueTon: g.currentTon,
-              totalPrincipalTon: g.currentTon,
-              totalYieldTon: '0',
-              canClaim: false,
-              isOnchainSynced: false,
-              lastStrategySyncTime: null,
-            }),
-        id: g.id,
-        title: g.title,
-        description: g.description,
-        emoji: g.emoji,
-        visibility: g.visibility,
-        strategy: g.strategy,
-        contractAddress: g.contractAddress,
-        targetTon: g.targetTon,
-        targetUsd: g.targetUsd,
-        dueDate: g.dueDate,
-        isArchived: g.isArchived,
-        createdAt: g.createdAt,
-      })),
+      goals: goalsWithSnapshots,
+    },
+  });
+});
+
+// GET /goals/public - Explore public goals that accept deposits
+goalRoutes.get('/public', async (c) => {
+  const user = await getCurrentUser(c);
+  const publicGoals = await db.query.goals.findMany({
+    where: and(eq(goals.visibility, 'public'), eq(goals.isArchived, false)),
+    orderBy: (goals, { desc }) => [desc(goals.createdAt)],
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      goals: await mapGoalsWithSnapshots(publicGoals, user?.walletAddr),
     },
   });
 });
@@ -157,9 +208,8 @@ goalRoutes.post('/', validateBody(createGoalSchema), async (c) => {
     visibility: body.visibility,
     strategy: body.strategy,
     targetTon: body.targetTon,
-    deadline,
-    goalId: BigInt(Date.now()) * 1000n + BigInt(Math.floor(Math.random() * 1000)),
-  });
+      deadline,
+    });
   
   const [newGoal] = await db.insert(goals).values({
     userId,
@@ -201,8 +251,53 @@ goalRoutes.post('/', validateBody(createGoalSchema), async (c) => {
       txParams: {
         messages: deployment.messages,
       },
+      configureAfterDeploy: true,
     },
   }, 201);
+});
+
+// POST /goals/:id/configure - Configure strategy wallet after factory deployment
+goalRoutes.post('/:id/configure', async (c) => {
+  const user = await getCurrentUser(c);
+
+  if (!user) {
+    return c.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }, 401);
+  }
+
+  const { id } = c.req.param();
+  const goal = await db.query.goals.findFirst({
+    where: and(eq(goals.id, id), eq(goals.userId, user.id)),
+  });
+
+  if (!goal) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Goal not found' } }, 404);
+  }
+
+  if (!goal.contractAddress) {
+    return c.json({ success: false, error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' } }, 503);
+  }
+
+  const info = await tonCenter.v2.getAddressInformation(goal.contractAddress);
+  if (!info.result || info.result.state !== 'active') {
+    return c.json({ success: false, error: { code: 'GOAL_NOT_READY', message: 'Goal contract is still being deployed. Retry configuration in a moment.' } }, 409);
+  }
+
+  const configuration = await buildGoalConfigureMessage({
+    owner: user.walletAddr,
+    strategy: goal.strategy as 'tonstakers' | 'stonfi',
+    goalAddress: goal.contractAddress,
+  });
+
+  return c.json({
+    success: true,
+    data: {
+      configure: {
+        goalId: id,
+        goalAddress: configuration.goalAddress,
+        txParams: configuration.txParams,
+      },
+    },
+  });
 });
 
 // PATCH /goals/:id - Update goal
@@ -267,6 +362,84 @@ goalRoutes.patch('/:id', validateBody(updateGoalSchema), async (c) => {
         dueDate: updatedGoal.dueDate,
         isArchived: updatedGoal.isArchived,
         createdAt: updatedGoal.createdAt,
+      },
+    },
+  });
+});
+
+// POST /goals/:id/sync - Sync live TonStakers yield into the GoalVault
+goalRoutes.post('/:id/sync', async (c) => {
+  const user = await getCurrentUser(c);
+
+  if (!user) {
+    return c.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }, 401);
+  }
+
+  const { id } = c.req.param();
+  const goal = await db.query.goals.findFirst({ where: and(eq(goals.id, id), eq(goals.userId, user.id)) });
+
+  if (!goal) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Goal not found' } }, 404);
+  }
+
+  if (!goal.contractAddress) {
+    return c.json({ success: false, error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' } }, 503);
+  }
+
+  const snapshot = await getGoalOnchainSnapshotSafe(goal.contractAddress, user.walletAddr);
+  if (!snapshot?.syncYieldTon || parseFloat(snapshot.syncYieldTon) <= 0) {
+    return c.json({ success: false, error: { code: 'ALREADY_SYNCED', message: 'No additional TonStakers yield needs syncing right now' } }, 409);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      sync: {
+        goalId: id,
+        amount: snapshot.syncYieldTon,
+        txParams: { messages: [buildGoalSyncYieldMessage(goal.contractAddress, snapshot.syncYieldTon)] },
+      },
+    },
+  });
+});
+
+// POST /goals/:id/unwind - Request TonStakers unstake back to the GoalVault
+goalRoutes.post('/:id/unwind', validateBody(unwindTonstakersSchema), async (c) => {
+  const user = await getCurrentUser(c);
+
+  if (!user) {
+    return c.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }, 401);
+  }
+
+  const { id } = c.req.param();
+  const body = c.get('validatedBody') as z.infer<typeof unwindTonstakersSchema>;
+  const goal = await db.query.goals.findFirst({ where: and(eq(goals.id, id), eq(goals.userId, user.id)) });
+
+  if (!goal) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Goal not found' } }, 404);
+  }
+
+  if (!goal.contractAddress) {
+    return c.json({ success: false, error: { code: 'NOT_DEPLOYED', message: 'Goal contract not deployed yet' } }, 503);
+  }
+
+  const snapshot = await getGoalOnchainSnapshotSafe(goal.contractAddress, user.walletAddr);
+  if (snapshot?.strategy !== 'tonstakers') {
+    return c.json({ success: false, error: { code: 'UNSUPPORTED_STRATEGY', message: 'This unwind flow is currently implemented for TonStakers goals only' } }, 400);
+  }
+
+  if (!snapshot.tsTonBalance || parseFloat(snapshot.tsTonBalance) <= 0) {
+    return c.json({ success: false, error: { code: 'NOTHING_TO_UNWIND', message: 'There is no tsTON position to unstake from this goal right now' } }, 409);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      unwind: {
+        goalId: id,
+        amount: snapshot.tsTonBalance,
+        mode: body.mode,
+        txParams: { messages: [buildGoalTonstakersUnstakeMessage(goal.contractAddress, snapshot.tsTonBalance, body.mode)] },
       },
     },
   });

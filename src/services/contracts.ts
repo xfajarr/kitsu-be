@@ -1,13 +1,17 @@
 import { Address, beginCell, storeStateInit, toNano, type StateInit } from '@ton/core';
 import { JettonMaster, TonClient } from '@ton/ton';
 import {
+  encodeDeployGoalVaultPayload,
   encodeClaimGoalPayload,
   encodeDepositGoalPayload,
   encodeDepositNestPayload,
   encodeGoalConfigureStonfiPayload,
   encodeGoalConfigureTonstakersWalletPayload,
+  encodeGoalRequestTonstakersUnstakePayload,
   encodeNestConfigureStonfiPayload,
   encodeNestConfigureTonstakersWalletPayload,
+  encodeNestRequestTonstakersUnstakePayload,
+  encodeSyncStrategyYieldPayload,
   encodeWithdrawNestPayload,
 } from './contracts-artifacts';
 
@@ -25,6 +29,7 @@ const TONSTAKERS_TESTNET_POOL = Address.parse('kQANFsYyYn-GSZ4oajUJmboDURZU-udMH
 const STONFI_TESTNET_ROUTER = Address.parse('kQALh-JBBIKK7gr0o4AVf9JZnEsFndqO0qTCyT-D-yBsWk0v');
 const STONFI_TESTNET_PTON_MASTER = Address.parse('kQACS30DNoUQ7NfApPvzh7eBmSZ9L4ygJ-lkNWtba8TQT-Px');
 const STONFI_TESTNET_TESTBLUE_MINTER = Address.parse('kQB_TOJSB7q3-Jm1O8s0jKFtqLElZDPjATs5uJGsujcjznq3');
+const GOAL_FACTORY_TESTNET_ADDRESS = Address.parse('EQDJ5vYFATHUxw4kB_fGH6YYNtpS4+iBTGSGD3iQ8hx8TvUj');
 
 const GOAL_DEPLOY_VALUE = toNano('0.1');
 const NEST_DEPLOY_VALUE = toNano('0.1');
@@ -64,13 +69,23 @@ function stateInitToBase64(init: StateInit) {
 
 function generatePlaceholderAddress(owner: string, goalId: bigint, suffix: string): Address {
   const hashInput = `${owner}:${goalId}:${suffix}:${Date.now()}`;
-  const hash = Buffer.from(hashInput).slice(0, 32);
-  return new Address(0, Buffer.from(hash).reverse());
+  const source = new TextEncoder().encode(hashInput);
+  const hash = Buffer.alloc(32);
+  for (let i = 0; i < Math.min(source.length, hash.length); i += 1) {
+    hash[i] = source[i] ?? 0;
+  }
+  hash.reverse();
+  return new Address(0, hash);
 }
 
 function resolveTonstakersPool() {
   const value = process.env.TONSTAKERS_POOL_ADDRESS?.trim();
   return value ? Address.parse(value) : TONSTAKERS_TESTNET_POOL;
+}
+
+function resolveGoalFactory() {
+  const value = process.env.GOAL_FACTORY_ADDRESS?.trim();
+  return value ? Address.parse(value) : GOAL_FACTORY_TESTNET_ADDRESS;
 }
 
 function resolveStonfiRouter() {
@@ -148,6 +163,54 @@ async function buildGoalConfigMessage(strategy: VaultStrategy, vaultAddress: Add
   };
 }
 
+async function getGoalFactoryNextId(factoryAddress: Address) {
+  const client = getTonClient();
+  const provider = client.provider(factoryAddress);
+  const stack = (await provider.get('getFactoryInfo', [])).stack;
+  stack.readAddress();
+  stack.readBoolean();
+  stack.readBoolean();
+  const nextGoalId = stack.readBigNumber();
+  return nextGoalId + 1n;
+}
+
+async function getGoalVaultAddress(params: {
+  owner: Address;
+  visibility: GoalVisibility;
+  strategy: VaultStrategy;
+  targetTon: string;
+  deadline: bigint;
+  goalId: bigint;
+}) {
+  const defaults = strategyDefaults(params.strategy);
+  const { getGoalVaultDeployment } = await import('./contracts-artifacts');
+  return await getGoalVaultDeployment({
+    goalId: params.goalId,
+    owner: asSharedAddress(params.owner),
+    goalMode: 0n,
+    visibilityMode: visibilityModeToId(params.visibility),
+    strategyMode: strategyModeToId(params.strategy),
+    strategyContract: asSharedAddress(defaults.strategyContract),
+    targetAmount: toNano(params.targetTon),
+    deadline: params.deadline,
+  });
+}
+
+export async function buildGoalConfigureMessage(params: {
+  owner: string;
+  strategy: VaultStrategy;
+  goalAddress: string;
+}) {
+  const owner = Address.parse(params.owner);
+  const goalAddress = Address.parse(params.goalAddress);
+  return {
+    goalAddress: goalAddress.toString(),
+    txParams: {
+      messages: [await buildGoalConfigMessage(params.strategy, goalAddress, owner)],
+    },
+  };
+}
+
 async function buildNestConfigMessage(strategy: VaultStrategy, vaultAddress: Address, owner: Address): Promise<TonConnectMessage> {
   if (strategy === 'tonstakers') {
     const poolAddress = resolveTonstakersPool();
@@ -212,43 +275,39 @@ export async function buildGoalDeploymentMessages(params: {
   strategy: VaultStrategy;
   targetTon: string;
   deadline: bigint;
-  goalId: bigint;
 }) {
   const owner = Address.parse(params.owner);
   const defaults = strategyDefaults(params.strategy);
-
-  let deploymentAddress: Address;
-  let stateInitBoc: string | undefined;
-
-  try {
-    const { getGoalVaultDeployment } = await import('./contracts-artifacts');
-    const deployment = await getGoalVaultDeployment({
-      goalId: params.goalId,
-      owner: asSharedAddress(owner),
-      goalMode: BigInt(0),
-      visibilityMode: visibilityModeToId(params.visibility),
-      strategyMode: strategyModeToId(params.strategy),
-      strategyContract: asSharedAddress(defaults.strategyContract),
-      targetAmount: toNano(params.targetTon),
-      deadline: params.deadline,
-    });
-    deploymentAddress = deployment.address;
-    stateInitBoc = stateInitToBase64(deployment.init as any);
-  } catch {
-    deploymentAddress = generatePlaceholderAddress(params.owner, params.goalId, 'goal');
-  }
-
+  const factoryAddress = resolveGoalFactory();
+  const goalId = await getGoalFactoryNextId(factoryAddress);
+  const deployment = await getGoalVaultAddress({
+    owner,
+    visibility: params.visibility,
+    strategy: params.strategy,
+    targetTon: params.targetTon,
+    deadline: params.deadline,
+    goalId,
+  });
   const messages: TonConnectMessage[] = [
     {
-      address: deploymentAddress.toString(),
+      address: factoryAddress.toString(),
       amount: GOAL_DEPLOY_VALUE.toString(),
-      ...(stateInitBoc ? { stateInit: stateInitBoc } : {}),
+      payload: encodeDeployGoalVaultPayload({
+        goalOwner: asSharedAddress(owner),
+        goalMode: 0n,
+        visibilityMode: visibilityModeToId(params.visibility),
+        strategyMode: strategyModeToId(params.strategy),
+        strategyContract: asSharedAddress(defaults.strategyContract),
+        targetAmount: toNano(params.targetTon),
+        deadline: params.deadline,
+      }),
     },
-    await buildGoalConfigMessage(params.strategy, deploymentAddress, owner),
   ];
 
   return {
-    address: deploymentAddress.toString(),
+    address: deployment.address.toString(),
+    goalId,
+    factoryAddress: factoryAddress.toString(),
     strategyContract: defaults.strategyContract.toString(),
     messages,
   };
@@ -324,10 +383,50 @@ export function buildGoalClaimMessage(contractAddress: string): TonConnectMessag
   };
 }
 
+export function buildGoalSyncYieldMessage(contractAddress: string, yieldTon: string): TonConnectMessage {
+  return {
+    address: contractAddress,
+    amount: WITHDRAW_MESSAGE_VALUE.toString(),
+    payload: encodeSyncStrategyYieldPayload(toNano(yieldTon)),
+  };
+}
+
+export function buildNestSyncYieldMessage(contractAddress: string, yieldTon: string): TonConnectMessage {
+  return {
+    address: contractAddress,
+    amount: WITHDRAW_MESSAGE_VALUE.toString(),
+    payload: encodeSyncStrategyYieldPayload(toNano(yieldTon)),
+  };
+}
+
+export function buildGoalTonstakersUnstakeMessage(contractAddress: string, jettonAmountTon: string, mode: 'standard' | 'instant' | 'best-rate' = 'best-rate'): TonConnectMessage {
+  return {
+    address: contractAddress,
+    amount: WITHDRAW_MESSAGE_VALUE.toString(),
+    payload: encodeGoalRequestTonstakersUnstakePayload(
+      toNano(jettonAmountTon),
+      mode === 'best-rate',
+      mode === 'instant',
+    ),
+  };
+}
+
 export function buildNestWithdrawMessage(contractAddress: string, sharesTon: string): TonConnectMessage {
   return {
     address: contractAddress,
     amount: WITHDRAW_MESSAGE_VALUE.toString(),
     payload: encodeWithdrawNestPayload(toNano(sharesTon)),
+  };
+}
+
+export function buildNestTonstakersUnstakeMessage(contractAddress: string, jettonAmountTon: string, mode: 'standard' | 'instant' | 'best-rate' = 'best-rate'): TonConnectMessage {
+  return {
+    address: contractAddress,
+    amount: WITHDRAW_MESSAGE_VALUE.toString(),
+    payload: encodeNestRequestTonstakersUnstakePayload(
+      toNano(jettonAmountTon),
+      mode === 'best-rate',
+      mode === 'instant',
+    ),
   };
 }

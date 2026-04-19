@@ -52,8 +52,50 @@ export function encodeClaimGoalPayload() {
   return toBase64(beginCell().storeUint(2882475764, 32).endCell());
 }
 
+export function encodeSyncStrategyYieldPayload(amount: bigint) {
+  return toBase64(beginCell().storeUint(2643318249, 32).storeCoins(amount).endCell());
+}
+
 export function encodeWithdrawNestPayload(shares: bigint) {
   return toBase64(beginCell().storeUint(2504080950, 32).storeCoins(shares).endCell());
+}
+
+export function encodeGoalRequestTonstakersUnstakePayload(jettonAmount: bigint, waitTillRoundEnd: boolean, fillOrKill: boolean) {
+  return toBase64(
+    beginCell()
+      .storeUint(2186891551, 32)
+      .storeCoins(jettonAmount)
+      .storeBit(waitTillRoundEnd)
+      .storeBit(fillOrKill)
+      .endCell(),
+  );
+}
+
+export function encodeNestRequestTonstakersUnstakePayload(jettonAmount: bigint, waitTillRoundEnd: boolean, fillOrKill: boolean) {
+  return encodeGoalRequestTonstakersUnstakePayload(jettonAmount, waitTillRoundEnd, fillOrKill);
+}
+
+export function encodeDeployGoalVaultPayload(params: {
+  goalOwner: Address;
+  goalMode: bigint;
+  visibilityMode: bigint;
+  strategyMode: bigint;
+  strategyContract: Address;
+  targetAmount: bigint;
+  deadline: bigint;
+}) {
+  return toBase64(
+    beginCell()
+      .storeUint(468953437, 32)
+      .storeAddress(params.goalOwner)
+      .storeUint(params.goalMode, 8)
+      .storeUint(params.visibilityMode, 8)
+      .storeUint(params.strategyMode, 8)
+      .storeAddress(params.strategyContract)
+      .storeCoins(params.targetAmount)
+      .storeUint(params.deadline, 64)
+      .endCell(),
+  );
 }
 
 export function encodeGoalConfigureTonstakersWalletPayload(jettonWallet: Address) {
@@ -93,42 +135,87 @@ export function encodeNestConfigureStonfiPayload(params: {
 }
 
 export async function getGoalVaultDeployment(params: GoalDeploymentParams) {
-  const code = codeFromBocHex(GOAL_VAULT_CODE_HEX);
-  const data = beginCell()
-    .storeUint(0, 1)
-    .storeUint(params.goalId, 64)
-    .storeAddress(params.owner)
-    .storeUint(params.goalMode, 8)
-    .storeUint(params.visibilityMode, 8)
-    .storeUint(params.strategyMode, 8)
-    .storeAddress(params.strategyContract)
-    .storeCoins(params.targetAmount)
-    .storeUint(params.deadline, 64)
-    .endCell();
+  try {
+    const modulePath = new URL('../../../kitsu-contracts/build/GoalVault/GoalVault_GoalVault.ts', import.meta.url).href;
+    const { GoalVault } = await import(modulePath);
+    const contract = await GoalVault.fromInit(
+      params.goalId,
+      params.owner,
+      params.goalMode,
+      params.visibilityMode,
+      params.strategyMode,
+      params.strategyContract,
+      params.targetAmount,
+      params.deadline,
+    );
+    if (!contract.init) {
+      throw new Error('GoalVault init missing');
+    }
 
-  const init = { code, data };
-  return {
-    address: contractAddress(0, init),
-    init,
-  };
+    return {
+      address: contract.address,
+      init: contract.init,
+    };
+  } catch {
+    const code = codeFromBocHex(GOAL_VAULT_CODE_HEX);
+    const data = beginCell()
+      .storeUint(0, 1)
+      .storeUint(params.goalId, 64)
+      .storeAddress(params.owner)
+      .storeUint(params.goalMode, 8)
+      .storeUint(params.visibilityMode, 8)
+      .storeUint(params.strategyMode, 8)
+      .storeAddress(params.strategyContract)
+      .storeCoins(params.targetAmount)
+      .storeUint(params.deadline, 64)
+      .endCell();
+
+    const init = { code, data };
+    return {
+      address: contractAddress(0, init),
+      init,
+    };
+  }
 }
 
 export async function getNestVaultDeployment(params: NestDeploymentParams) {
-  const code = codeFromBocHex(NEST_VAULT_CODE_HEX);
-  const data = beginCell()
-    .storeUint(0, 1)
-    .storeAddress(params.owner)
-    .storeRef(stringToCell(params.name))
-    .storeUint(params.emoji, 8)
-    .storeBit(params.isPublic)
-    .storeUint(params.strategyMode, 8)
-    .storeAddress(params.strategyContract)
-    .storeUint(params.apr, 16)
-    .endCell();
+  try {
+    const modulePath = new URL('../../../kitsu-contracts/build/NestVault/NestVault_NestVault.ts', import.meta.url).href;
+    const { NestVault } = await import(modulePath);
+    const contract = await NestVault.fromInit(
+      params.owner,
+      stringToCell(params.name),
+      params.emoji,
+      params.isPublic,
+      params.strategyMode,
+      params.strategyContract,
+      params.apr,
+    );
+    if (!contract.init) {
+      throw new Error('NestVault init missing');
+    }
 
-  const init = { code, data };
-  return {
-    address: contractAddress(0, init),
-    init,
-  };
+    return {
+      address: contract.address,
+      init: contract.init,
+    };
+  } catch {
+    const code = codeFromBocHex(NEST_VAULT_CODE_HEX);
+    const data = beginCell()
+      .storeUint(0, 1)
+      .storeAddress(params.owner)
+      .storeRef(stringToCell(params.name))
+      .storeUint(params.emoji, 8)
+      .storeBit(params.isPublic)
+      .storeUint(params.strategyMode, 8)
+      .storeAddress(params.strategyContract)
+      .storeUint(params.apr, 16)
+      .endCell();
+
+    const init = { code, data };
+    return {
+      address: contractAddress(0, init),
+      init,
+    };
+  }
 }

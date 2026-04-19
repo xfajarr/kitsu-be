@@ -80,6 +80,7 @@ mock.module('../db', () => ({
 }));
 
 mock.module('../services/vaults', () => ({
+  getGoalOnchainSnapshotSafe: async () => null,
   getNestOnchainSnapshotSafe: async (contractAddress: string, walletAddress?: string) => {
     const walletKey = walletAddress ? `${contractAddress}:${walletAddress}` : null;
     if (walletKey && state.snapshots.has(walletKey)) {
@@ -90,6 +91,12 @@ mock.module('../services/vaults', () => ({
 }));
 
 mock.module('../services/contracts', () => ({
+  buildGoalDeploymentMessages: async () => ({ address: 'goal-vault-1', goalId: 1n, factoryAddress: 'factory-1', strategyContract: 'pool-address', messages: [] }),
+  buildGoalConfigureMessage: async () => ({ goalAddress: 'goal-vault-1', txParams: { messages: [] } }),
+  buildGoalDepositMessage: (contractAddress: string, amountTon: string) => ({ address: contractAddress, amount: amountTon, payload: 'deposit-goal' }),
+  buildGoalClaimMessage: (contractAddress: string) => ({ address: contractAddress, amount: '0.05', payload: 'claim-goal' }),
+  buildGoalSyncYieldMessage: (contractAddress: string, amount: string) => ({ address: contractAddress, amount: '0.05', payload: `sync-goal-${amount}` }),
+  buildGoalTonstakersUnstakeMessage: (contractAddress: string, amount: string, mode: string) => ({ address: contractAddress, amount: '0.05', payload: `unwind-goal-${amount}-${mode}` }),
   buildNestDeploymentMessages: async () => ({
     address: 'vault-1',
     strategyContract: 'pool-address',
@@ -105,6 +112,16 @@ mock.module('../services/contracts', () => ({
     address: contractAddress,
     amount: '0.05',
     payload: `withdraw-${sharesTon}`,
+  }),
+  buildNestSyncYieldMessage: (contractAddress: string, yieldTon: string) => ({
+    address: contractAddress,
+    amount: '0.05',
+    payload: `sync-${yieldTon}`,
+  }),
+  buildNestTonstakersUnstakeMessage: (contractAddress: string, jettonAmountTon: string, mode: string) => ({
+    address: contractAddress,
+    amount: '0.05',
+    payload: `unwind-${jettonAmountTon}-${mode}`,
   }),
   mapDenStrategy: (strategy: 'steady' | 'adventurous') => strategy === 'steady' ? 'tonstakers' : 'stonfi',
   strategyDefaults: () => ({

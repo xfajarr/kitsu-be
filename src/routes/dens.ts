@@ -8,7 +8,7 @@ import { Address } from '@ton/core';
 import { validateBody } from '../middleware/validate';
 import { jwtService } from '../lib/jwt';
 import { log } from '../lib/logger';
-import { buildNestDeploymentMessages, buildNestDepositMessage, buildNestWithdrawMessage, mapDenStrategy, strategyDefaults } from '../services/contracts';
+import { buildNestDeploymentMessages, buildNestDepositMessage, buildNestSyncYieldMessage, buildNestTonstakersUnstakeMessage, buildNestWithdrawMessage, mapDenStrategy, strategyDefaults } from '../services/contracts';
 import { getNestOnchainSnapshotSafe } from '../services/vaults';
 
 export const denRoutes = new Hono();
@@ -30,6 +30,10 @@ const confirmJoinDenSchema = z.object({
   txBoc: z.string().min(1),
 });
 
+const unwindTonstakersSchema = z.object({
+  mode: z.enum(['standard', 'instant', 'best-rate']).default('best-rate'),
+});
+
 const JOIN_CONFIRM_TTL_SECONDS = 15 * 60;
 const DEN_JOIN_CONFIRM_SECRET = process.env.DEN_JOIN_CONFIRM_SECRET || process.env.JWT_SECRET || 'default-secret-change-in-production';
 
@@ -41,8 +45,13 @@ type JoinConfirmationPayload = {
   nonce: string;
 };
 
-function toBase64Url(input: string | Buffer) {
-  return Buffer.from(input)
+function toBase64Url(input: string | Uint8Array | Buffer) {
+  const buffer = typeof input === 'string'
+    ? Buffer.from(input)
+    : Buffer.isBuffer(input)
+      ? input
+      : Buffer.from(input);
+  return buffer
     .toString('base64')
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -77,7 +86,7 @@ function verifyJoinConfirmationToken(token: string): JoinConfirmationPayload | n
     const receivedSignature = fromBase64Url(encodedSignature);
     if (
       expectedSignature.length !== receivedSignature.length ||
-      !timingSafeEqual(expectedSignature, receivedSignature)
+      !timingSafeEqual(new Uint8Array(expectedSignature), new Uint8Array(receivedSignature))
     ) {
       return null;
     }
@@ -534,6 +543,92 @@ denRoutes.post('/:id/join/confirm', validateBody(confirmJoinDenSchema), async (c
         amount: confirmation.amountTon,
         confirmed: true,
         txHash,
+      },
+    },
+  });
+});
+
+// POST /dens/:id/sync - Sync live TonStakers yield into vault accounting
+denRoutes.post('/:id/sync', async (c) => {
+  const user = await getCurrentUser(c);
+
+  if (!user) {
+    return c.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }, 401);
+  }
+
+  const { id } = c.req.param();
+  const den = await db.query.dens.findFirst({ where: eq(dens.id, id) });
+
+  if (!den) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Den not found' } }, 404);
+  }
+
+  if (den.ownerId !== user.id) {
+    return c.json({ success: false, error: { code: 'FORBIDDEN', message: 'Only the Nest owner can sync yield' } }, 403);
+  }
+
+  if (!den.contractAddress) {
+    return c.json({ success: false, error: { code: 'NOT_DEPLOYED', message: 'Nest contract not deployed yet' } }, 503);
+  }
+
+  const snapshot = await getNestOnchainSnapshotSafe(den.contractAddress, user.walletAddr);
+  if (!snapshot?.syncYieldTon || parseFloat(snapshot.syncYieldTon) <= 0) {
+    return c.json({ success: false, error: { code: 'ALREADY_SYNCED', message: 'No additional TonStakers yield needs syncing right now' } }, 409);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      sync: {
+        denId: id,
+        amount: snapshot.syncYieldTon,
+        txParams: { messages: [buildNestSyncYieldMessage(den.contractAddress, snapshot.syncYieldTon)] },
+      },
+    },
+  });
+});
+
+// POST /dens/:id/unwind - Request TonStakers unstake back to the Nest vault
+denRoutes.post('/:id/unwind', validateBody(unwindTonstakersSchema), async (c) => {
+  const user = await getCurrentUser(c);
+
+  if (!user) {
+    return c.json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } }, 401);
+  }
+
+  const { id } = c.req.param();
+  const body = c.get('validatedBody') as z.infer<typeof unwindTonstakersSchema>;
+  const den = await db.query.dens.findFirst({ where: eq(dens.id, id) });
+
+  if (!den) {
+    return c.json({ success: false, error: { code: 'NOT_FOUND', message: 'Den not found' } }, 404);
+  }
+
+  if (den.ownerId !== user.id) {
+    return c.json({ success: false, error: { code: 'FORBIDDEN', message: 'Only the Nest owner can unwind strategy funds' } }, 403);
+  }
+
+  if (!den.contractAddress) {
+    return c.json({ success: false, error: { code: 'NOT_DEPLOYED', message: 'Nest contract not deployed yet' } }, 503);
+  }
+
+  const snapshot = await getNestOnchainSnapshotSafe(den.contractAddress, user.walletAddr);
+  if (snapshot?.strategy !== 'tonstakers') {
+    return c.json({ success: false, error: { code: 'UNSUPPORTED_STRATEGY', message: 'This unwind flow is currently implemented for TonStakers nests only' } }, 400);
+  }
+
+  if (!snapshot.tsTonBalance || parseFloat(snapshot.tsTonBalance) <= 0) {
+    return c.json({ success: false, error: { code: 'NOTHING_TO_UNWIND', message: 'There is no tsTON position to unstake from this Nest right now' } }, 409);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      unwind: {
+        denId: id,
+        amount: snapshot.tsTonBalance,
+        mode: body.mode,
+        txParams: { messages: [buildNestTonstakersUnstakeMessage(den.contractAddress, snapshot.tsTonBalance, body.mode)] },
       },
     },
   });
