@@ -9,7 +9,7 @@ import {
   encodeNestConfigureTonstakersWalletPayload,
   getGoalVaultDeployment,
   getNestVaultDeployment,
-} from '../../../kitsu-contracts/scripts/integrationPayloads';
+} from './contracts-artifacts';
 
 export type VaultStrategy = 'tonstakers' | 'stonfi';
 export type GoalVisibility = 'private' | 'public';
@@ -36,6 +36,14 @@ let tonClient: TonClient | null = null;
 
 function asSharedAddress<T>(address: T) {
   return address as any;
+}
+
+function strategyModeToId(strategy: VaultStrategy) {
+  return strategy === 'tonstakers' ? 0n : 1n;
+}
+
+function visibilityModeToId(visibility: GoalVisibility) {
+  return visibility === 'private' ? 0n : 1n;
 }
 
 function getTonClient() {
@@ -201,9 +209,9 @@ export async function buildGoalDeploymentMessages(params: {
   const deployment = await getGoalVaultDeployment({
     goalId: params.goalId,
     owner: asSharedAddress(owner),
-    goalMode: 'personal',
-    visibilityMode: params.visibility,
-    strategyMode: params.strategy,
+    goalMode: 0n,
+    visibilityMode: visibilityModeToId(params.visibility),
+    strategyMode: strategyModeToId(params.strategy),
     strategyContract: asSharedAddress(defaults.strategyContract),
     targetAmount: toNano(params.targetTon),
     deadline: params.deadline,
@@ -238,7 +246,7 @@ export async function buildNestDeploymentMessages(params: {
     name: params.name,
     emoji: 1n,
     isPublic: params.isPublic,
-    strategyMode: params.strategy,
+    strategyMode: strategyModeToId(params.strategy),
     strategyContract: asSharedAddress(defaults.strategyContract),
     apr: defaults.aprBps,
   });
