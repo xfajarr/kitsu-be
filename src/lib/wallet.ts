@@ -47,14 +47,14 @@ export async function verifyWalletSignature(proof: WalletProof): Promise<boolean
     }
     
     // Validate address format (basic check)
-    const addressPattern = /^(EQ|UQ|kf|0f)[A-Za-z0-9_-]{46,}$|^-?\d+:[A-Fa-f0-9]{64}$/;
+    const addressPattern = /^(EQ|UQ|kQ|0Q|kf|0f)[A-Za-z0-9_-]{46,}$|^-?\d+:[A-Fa-f0-9]{64}$/;
     if (!addressPattern.test(proof.address)) {
       log.warn('WALLET', 'Invalid address format');
       return false;
     }
     
     // Validate signature format (base64 or hex)
-    const signaturePattern = /^[A-Za-z0-9+/=]{64,}$|^[A-Fa-f0-9]{128}$/;
+    const signaturePattern = /^[A-Za-z0-9+/_=-]{64,}$|^[A-Fa-f0-9]{128}$/;
     if (!signaturePattern.test(proof.signature)) {
       log.warn('WALLET', 'Invalid signature format');
       return false;

@@ -17,3 +17,6 @@ coverage/
 
 # os
 .DS_Store
+
+# vercel
+.vercel/

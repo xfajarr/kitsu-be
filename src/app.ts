@@ -16,16 +16,34 @@ import { logger } from './lib/logger';
 
 const app = new Hono();
 
+function isAllowedOrigin(origin: string) {
+  if (
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:') ||
+    /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)
+  ) {
+    return true;
+  }
+
+  const configuredOrigins = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  return configuredOrigins.includes(origin);
+}
+
 app.use('*', cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:8080',
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ],
+  origin: (origin) => {
+    if (!origin) {
+      return '*';
+    }
+
+    return isAllowedOrigin(origin) ? origin : '';
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
+  credentials: false,
 }));
 
 app.use('*', async (c, next) => {
