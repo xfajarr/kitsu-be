@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users } from '../db/schema';
+import { db } from '../db/index.js';
+import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { jwtService } from '../lib/jwt';
-import { generateFoxyResponse } from '../services/ai';
-import { log } from '../lib/logger';
+import { jwtService } from '../lib/jwt.js';
+import { generateFoxyResponse } from '../services/ai.js';
+import { log } from '../lib/logger.js';
 import { z } from 'zod';
-import { validateBody } from '../middleware/validate';
+import { validateBody } from '../middleware/validate.js';
 
 export const aiRoutes = new Hono();
 

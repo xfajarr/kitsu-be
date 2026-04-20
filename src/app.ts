@@ -2,17 +2,19 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { notFoundHandler, errorHandler } from './middleware/error';
-import { healthRoutes } from './routes/health';
-import { authRoutes } from './routes/auth';
-import { userRoutes } from './routes/users';
-import { goalRoutes } from './routes/goals';
-import { denRoutes } from './routes/dens';
-import { portfolioRoutes } from './routes/portfolio';
-import { transactionRoutes } from './routes/transactions';
-import { questRoutes } from './routes/quests';
-import { aiRoutes } from './routes/ai';
-import { logger } from './lib/logger';
+import { notFoundHandler, errorHandler } from './middleware/error.js';
+import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
+import { userRoutes } from './routes/users.js';
+import { goalRoutes } from './routes/goals.js';
+import { denRoutes } from './routes/dens.js';
+import { portfolioRoutes } from './routes/portfolio.js';
+import { transactionRoutes } from './routes/transactions.js';
+import { questRoutes } from './routes/quests.js';
+import { aiRoutes } from './routes/ai.js';
+import { stonfiRoutes } from './routes/stonfi.js';
+import { logger } from './lib/logger.js';
+import { getTonNetworkFromRequest, runWithTonNetwork } from './lib/ton-network.js';
 
 const app = new Hono();
 
@@ -42,9 +44,15 @@ app.use('*', cors({
     return isAllowedOrigin(origin) ? origin : '';
   },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-TON-Network'],
   credentials: false,
 }));
+
+app.use('*', async (c, next) => {
+  const network = getTonNetworkFromRequest(c.req.header('x-ton-network') || c.req.query('network'));
+  c.res.headers.set('X-TON-Network', network);
+  await runWithTonNetwork(network, next);
+});
 
 app.use('*', async (c, next) => {
   const start = Date.now();
@@ -103,6 +111,7 @@ app.route('/portfolio', portfolioRoutes);
 app.route('/transactions', transactionRoutes);
 app.route('/quests', questRoutes);
 app.route('/ai', aiRoutes);
+app.route('/stonfi', stonfiRoutes);
 
 app.get('/', (c) => {
   return c.json({

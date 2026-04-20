@@ -1,5 +1,6 @@
 import { Address } from '@ton/core';
 import { JettonMaster, TonClient } from '@ton/ton';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network';
 
 type TonstakersPoolDecoded = {
   total_balance: number;
@@ -20,8 +21,8 @@ let tonClient: TonClient | null = null;
 function getTonClient() {
   if (!tonClient) {
     tonClient = new TonClient({
-      endpoint: process.env.TONCENTER_JSONRPC_URL || 'https://testnet.toncenter.com/api/v2/jsonRPC',
-      apiKey: process.env.TONCENTER_API_KEY || undefined,
+      endpoint: getNetworkEnv('TONCENTER_JSONRPC_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v2/jsonRPC' : 'https://testnet.toncenter.com/api/v2/jsonRPC'),
+      apiKey: getNetworkEnv('TONCENTER_API_KEY') || undefined,
     });
   }
 
@@ -29,13 +30,14 @@ function getTonClient() {
 }
 
 function getTonApiBaseUrl() {
-  return process.env.TONAPI_BASE_URL || 'https://testnet.tonapi.io/v2';
+  return getNetworkEnv('TONAPI_BASE_URL') || (getTonNetwork() === 'mainnet' ? 'https://tonapi.io/v2' : 'https://testnet.tonapi.io/v2');
 }
 
 async function tonApiFetch<T>(path: string): Promise<T> {
   const headers: Record<string, string> = {};
-  if (process.env.TONAPI_API_KEY) {
-    headers.Authorization = `Bearer ${process.env.TONAPI_API_KEY}`;
+  const apiKey = getNetworkEnv('TONAPI_API_KEY');
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
   }
 
   const response = await fetch(`${getTonApiBaseUrl()}${path}`, { headers });

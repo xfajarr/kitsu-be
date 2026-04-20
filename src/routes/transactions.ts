@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { dens, goals, denDeposits, activityLog } from '../db/schema';
+import { db } from '../db/index.js';
+import { dens, goals, denDeposits, activityLog } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateBody } from '../middleware/validate';
-import { jwtService } from '../lib/jwt';
-import { gamificationService } from '../services/gamification';
-import { priceService } from '../services/prices';
-import { log } from '../lib/logger';
-import { buildGoalClaimMessage, buildGoalDepositMessage, buildNestDepositMessage, buildNestWithdrawMessage, mapDenStrategy } from '../services/contracts';
+import { validateBody } from '../middleware/validate.js';
+import { jwtService } from '../lib/jwt.js';
+import { gamificationService } from '../services/gamification.js';
+import { priceService } from '../services/prices.js';
+import { log } from '../lib/logger.js';
+import { buildGoalClaimMessage, buildGoalDepositMessage, buildNestDepositMessage, buildNestWithdrawMessage, mapDenStrategy } from '../services/contracts.js';
 
 export const transactionRoutes = new Hono();
 

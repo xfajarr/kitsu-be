@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users, leaderboard } from '../db/schema';
+import { db } from '../db/index.js';
+import { users, leaderboard } from '../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateBody } from '../middleware/validate';
-import { jwtService } from '../lib/jwt';
-import { log } from '../lib/logger';
+import { validateBody } from '../middleware/validate.js';
+import { jwtService } from '../lib/jwt.js';
+import { log } from '../lib/logger.js';
 
 export const userRoutes = new Hono();
 

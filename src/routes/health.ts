@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { client } from '../db';
-import { log } from '../lib/logger';
+import { client } from '../db/index.js';
+import { log } from '../lib/logger.js';
 
 export const healthRoutes = new Hono();
 

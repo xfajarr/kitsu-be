@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users } from '../db/schema';
+import { db } from '../db/index.js';
+import { users } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateBody } from '../middleware/validate';
-import { jwtService } from '../lib/jwt';
-import { walletService } from '../lib/wallet';
-import { log } from '../lib/logger';
+import { validateBody } from '../middleware/validate.js';
+import { jwtService } from '../lib/jwt.js';
+import { walletService } from '../lib/wallet.js';
+import { log } from '../lib/logger.js';
 import { Address } from '@ton/core';
 
 export const authRoutes = new Hono();

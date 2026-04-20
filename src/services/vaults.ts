@@ -1,8 +1,9 @@
 import { Address, TupleBuilder, fromNano } from '@ton/core';
 import { TonClient } from '@ton/ton';
-import { log } from '../lib/logger';
-import { tonCenter } from './toncenter';
-import { deriveTonstakersVaultJettonWallet, getTonstakersJettonWalletBalance, getTonstakersPoolDecoded, scaleTsTonToTon } from './tonstakers';
+import { log } from '../lib/logger.js';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network.js';
+import { tonCenter } from './toncenter.js';
+import { deriveTonstakersVaultJettonWallet, getTonstakersJettonWalletBalance, getTonstakersPoolDecoded, scaleTsTonToTon } from './tonstakers.js';
 
 export type GoalOnchainSnapshot = {
   targetTon: string;
@@ -54,8 +55,8 @@ let tonClient: TonClient | null = null;
 function getTonClient() {
   if (!tonClient) {
     tonClient = new TonClient({
-      endpoint: process.env.TONCENTER_JSONRPC_URL || 'https://testnet.toncenter.com/api/v2/jsonRPC',
-      apiKey: process.env.TONCENTER_API_KEY || undefined,
+      endpoint: getNetworkEnv('TONCENTER_JSONRPC_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v2/jsonRPC' : 'https://testnet.toncenter.com/api/v2/jsonRPC'),
+      apiKey: getNetworkEnv('TONCENTER_API_KEY') || undefined,
     });
   }
 

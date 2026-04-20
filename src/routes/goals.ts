@@ -1,15 +1,15 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users, goals } from '../db/schema';
+import { db } from '../db/index.js';
+import { users, goals } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
-import { validateBody } from '../middleware/validate';
-import { jwtService } from '../lib/jwt';
-import { log } from '../lib/logger';
-import { priceService } from '../services/prices';
-import { buildGoalClaimMessage, buildGoalConfigureMessage, buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalSyncYieldMessage, buildGoalTonstakersUnstakeMessage } from '../services/contracts';
-import { getGoalOnchainSnapshotSafe } from '../services/vaults';
-import { tonCenter } from '../services/toncenter';
+import { validateBody } from '../middleware/validate.js';
+import { jwtService } from '../lib/jwt.js';
+import { log } from '../lib/logger.js';
+import { priceService } from '../services/prices.js';
+import { buildGoalClaimMessage, buildGoalConfigureMessage, buildGoalDeploymentMessages, buildGoalDepositMessage, buildGoalSyncYieldMessage, buildGoalTonstakersUnstakeMessage } from '../services/contracts.js';
+import { getGoalOnchainSnapshotSafe } from '../services/vaults.js';
+import { tonCenter } from '../services/toncenter.js';
 
 export const goalRoutes = new Hono();
 

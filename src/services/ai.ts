@@ -2,7 +2,7 @@
 // https://heurist.ai
 
 import OpenAI from 'openai';
-import { log } from '../lib/logger';
+import { log } from '../lib/logger.js';
 
 const HEURIST_BASE_URL = process.env.HEURIST_BASE_URL || 'https://llm-gateway.heurist.xyz';
 const HEURIST_API_KEY = process.env.HEURIST_API_KEY || '';

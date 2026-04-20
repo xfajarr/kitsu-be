@@ -13,7 +13,8 @@ import {
   encodeNestRequestTonstakersUnstakePayload,
   encodeSyncStrategyYieldPayload,
   encodeWithdrawNestPayload,
-} from './contracts-artifacts';
+} from './contracts-artifacts.js';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network.js';
 
 export type VaultStrategy = 'tonstakers' | 'stonfi';
 export type GoalVisibility = 'private' | 'public';
@@ -55,8 +56,8 @@ function visibilityModeToId(visibility: GoalVisibility) {
 function getTonClient() {
   if (!tonClient) {
     tonClient = new TonClient({
-      endpoint: process.env.TONCENTER_JSONRPC_URL || 'https://testnet.toncenter.com/api/v2/jsonRPC',
-      apiKey: process.env.TONCENTER_API_KEY || undefined,
+      endpoint: getNetworkEnv('TONCENTER_JSONRPC_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v2/jsonRPC' : 'https://testnet.toncenter.com/api/v2/jsonRPC'),
+      apiKey: getNetworkEnv('TONCENTER_API_KEY') || undefined,
     });
   }
 
@@ -79,32 +80,62 @@ function generatePlaceholderAddress(owner: string, goalId: bigint, suffix: strin
 }
 
 function resolveTonstakersPool() {
-  const value = process.env.TONSTAKERS_POOL_ADDRESS?.trim();
-  return value ? Address.parse(value) : TONSTAKERS_TESTNET_POOL;
+  const value = getNetworkEnv('TONSTAKERS_POOL_ADDRESS')?.trim();
+  if (value) {
+    return Address.parse(value);
+  }
+  if (getTonNetwork() === 'testnet') {
+    return TONSTAKERS_TESTNET_POOL;
+  }
+  throw new Error('TONSTAKERS_POOL_ADDRESS_MAINNET is not configured');
 }
 
 function resolveGoalFactory() {
-  const value = process.env.GOAL_FACTORY_ADDRESS?.trim();
-  return value ? Address.parse(value) : GOAL_FACTORY_TESTNET_ADDRESS;
+  const value = getNetworkEnv('GOAL_FACTORY_ADDRESS')?.trim();
+  if (value) {
+    return Address.parse(value);
+  }
+  if (getTonNetwork() === 'testnet') {
+    return GOAL_FACTORY_TESTNET_ADDRESS;
+  }
+  throw new Error('GOAL_FACTORY_ADDRESS_MAINNET is not configured');
 }
 
 function resolveStonfiRouter() {
-  const value = process.env.STONFI_ROUTER_ADDRESS?.trim();
-  return value ? Address.parse(value) : STONFI_TESTNET_ROUTER;
+  const value = getNetworkEnv('STONFI_ROUTER_ADDRESS')?.trim();
+  if (value) {
+    return Address.parse(value);
+  }
+  if (getTonNetwork() === 'testnet') {
+    return STONFI_TESTNET_ROUTER;
+  }
+  throw new Error('STONFI_ROUTER_ADDRESS_MAINNET is not configured');
 }
 
 function resolveStonfiPtonMaster() {
-  const value = process.env.STONFI_PTON_MASTER?.trim();
-  return value ? Address.parse(value) : STONFI_TESTNET_PTON_MASTER;
+  const value = getNetworkEnv('STONFI_PTON_MASTER')?.trim();
+  if (value) {
+    return Address.parse(value);
+  }
+  if (getTonNetwork() === 'testnet') {
+    return STONFI_TESTNET_PTON_MASTER;
+  }
+  throw new Error('STONFI_PTON_MASTER_MAINNET is not configured');
 }
 
 function resolveStonfiOtherTokenMinter() {
-  const value = process.env.STONFI_OTHER_TOKEN_MINTER?.trim();
-  return value ? Address.parse(value) : STONFI_TESTNET_TESTBLUE_MINTER;
+  const value = getNetworkEnv('STONFI_OTHER_TOKEN_MINTER')?.trim();
+  if (value) {
+    return Address.parse(value);
+  }
+  if (getTonNetwork() === 'testnet') {
+    return STONFI_TESTNET_TESTBLUE_MINTER;
+  }
+  throw new Error('STONFI_OTHER_TOKEN_MINTER_MAINNET is not configured');
 }
 
 function resolveStonfiLpWalletOrOwner(owner: Address) {
-  const value = process.env.STONFI_LP_WALLET?.trim();
+  const value = getNetworkEnv('STONFI_LP_WALLET')?.trim();
   return value ? Address.parse(value) : owner;
 }
 

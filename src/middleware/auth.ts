@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
-import { jwtService } from '../lib/jwt';
-import { log } from '../lib/logger';
-import { AppError } from './error';
+import { jwtService } from '../lib/jwt.js';
+import { log } from '../lib/logger.js';
+import { AppError } from './error.js';
 
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');

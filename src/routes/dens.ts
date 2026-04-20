@@ -1,15 +1,15 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users, dens, denDeposits } from '../db/schema';
+import { db } from '../db/index.js';
+import { users, dens, denDeposits } from '../db/schema.js';
 import { eq, and, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { Address } from '@ton/core';
-import { validateBody } from '../middleware/validate';
-import { jwtService } from '../lib/jwt';
-import { log } from '../lib/logger';
-import { buildNestDeploymentMessages, buildNestDepositMessage, buildNestSyncYieldMessage, buildNestTonstakersUnstakeMessage, buildNestWithdrawMessage, mapDenStrategy, strategyDefaults } from '../services/contracts';
-import { getNestOnchainSnapshotSafe } from '../services/vaults';
+import { validateBody } from '../middleware/validate.js';
+import { jwtService } from '../lib/jwt.js';
+import { log } from '../lib/logger.js';
+import { buildNestDeploymentMessages, buildNestDepositMessage, buildNestSyncYieldMessage, buildNestTonstakersUnstakeMessage, buildNestWithdrawMessage, mapDenStrategy, strategyDefaults } from '../services/contracts.js';
+import { getNestOnchainSnapshotSafe } from '../services/vaults.js';
 
 export const denRoutes = new Hono();
 

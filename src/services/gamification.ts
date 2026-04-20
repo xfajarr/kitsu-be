@@ -1,6 +1,6 @@
 // Gamification Service - XP, Levels, Quests, Leaderboard
 
-import { log } from '../lib/logger';
+import { log } from '../lib/logger.js';
 
 // XP rewards for different actions
 export const XP_REWARDS: Record<string, number> = {

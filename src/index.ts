@@ -1,16 +1,18 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from './lib/logger';
-import { healthRoutes } from './routes/health';
-import { authRoutes } from './routes/auth';
-import { userRoutes } from './routes/users';
-import { goalRoutes } from './routes/goals';
-import { denRoutes } from './routes/dens';
-import { portfolioRoutes } from './routes/portfolio';
-import { transactionRoutes } from './routes/transactions';
-import { questRoutes } from './routes/quests';
-import { aiRoutes } from './routes/ai';
-import { notFoundHandler, errorHandler } from './middleware/error';
+import { logger } from './lib/logger.js';
+import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
+import { userRoutes } from './routes/users.js';
+import { goalRoutes } from './routes/goals.js';
+import { denRoutes } from './routes/dens.js';
+import { portfolioRoutes } from './routes/portfolio.js';
+import { transactionRoutes } from './routes/transactions.js';
+import { questRoutes } from './routes/quests.js';
+import { aiRoutes } from './routes/ai.js';
+import { stonfiRoutes } from './routes/stonfi.js';
+import { notFoundHandler, errorHandler } from './middleware/error.js';
+import { getTonNetworkFromRequest, runWithTonNetwork } from './lib/ton-network.js';
 
 function isAllowedOrigin(origin: string) {
   if (
@@ -33,7 +35,7 @@ app.use('*', async (c, next) => {
   if (isAllowedOrigin(origin)) {
     c.res.headers.set('Access-Control-Allow-Origin', origin);
     c.res.headers.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-    c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    c.res.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-TON-Network');
     c.res.headers.set('Access-Control-Allow-Credentials', 'true');
   }
   await next();
@@ -42,6 +44,12 @@ app.use('*', async (c, next) => {
 app.use('*', cors({
   origin: (origin) => isAllowedOrigin(origin) ? origin : null,
 }));
+
+app.use('*', async (c, next) => {
+  const network = getTonNetworkFromRequest(c.req.header('x-ton-network') || c.req.query('network'));
+  c.res.headers.set('X-TON-Network', network);
+  await runWithTonNetwork(network, next);
+});
 
 app.route('/', healthRoutes);
 app.route('/auth', authRoutes);
@@ -52,6 +60,7 @@ app.route('/portfolio', portfolioRoutes);
 app.route('/transactions', transactionRoutes);
 app.route('/quests', questRoutes);
 app.route('/ai', aiRoutes);
+app.route('/stonfi', stonfiRoutes);
 
 app.notFound(notFoundHandler);
 app.onError(errorHandler);

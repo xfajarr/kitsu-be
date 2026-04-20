@@ -1,7 +1,7 @@
 // TON Wallet Signature Verification
 // Based on TON Connect authentication protocol
 
-import { log } from '../lib/logger';
+import { log } from '../lib/logger.js';
 
 export interface WalletProof {
   address: string;

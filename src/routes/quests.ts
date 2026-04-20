@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { users, quests, activityLog } from '../db/schema';
+import { db } from '../db/index.js';
+import { users, quests, activityLog } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { jwtService } from '../lib/jwt';
-import { gamificationService, QUEST_DEFINITIONS } from '../services/gamification';
-import { log } from '../lib/logger';
+import { jwtService } from '../lib/jwt.js';
+import { gamificationService, QUEST_DEFINITIONS } from '../services/gamification.js';
+import { log } from '../lib/logger.js';
 
 export const questRoutes = new Hono();
 

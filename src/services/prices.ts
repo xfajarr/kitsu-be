@@ -1,5 +1,5 @@
 // Price Service — live quotes (CoinGecko public API by default)
-import { log } from '../lib/logger';
+import { log } from '../lib/logger.js';
 
 let priceCache: {
   prices: Record<string, { usd: number; change24h: number }>;

@@ -2,11 +2,20 @@
 // API V3: https://testnet.toncenter.com/api/v3/index.html
 // API V2: https://testnet.toncenter.com/api/v2/
 
-import { log } from '../lib/logger';
+import { log } from '../lib/logger.js';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network';
 
-const TONCENTER_V2_URL = process.env.TONCENTER_V2_URL || 'https://testnet.toncenter.com/api/v2';
-const TONCENTER_V3_URL = process.env.TONCENTER_V3_URL || 'https://testnet.toncenter.com/api/v3';
-const API_KEY = process.env.TONCENTER_API_KEY || '';
+function getTonCenterV2Url() {
+  return getNetworkEnv('TONCENTER_V2_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v2' : 'https://testnet.toncenter.com/api/v2');
+}
+
+function getTonCenterV3Url() {
+  return getNetworkEnv('TONCENTER_V3_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v3' : 'https://testnet.toncenter.com/api/v3');
+}
+
+function getApiKey() {
+  return getNetworkEnv('TONCENTER_API_KEY') || '';
+}
 
 interface FetchOptions {
   method?: 'GET' | 'POST';
@@ -15,15 +24,16 @@ interface FetchOptions {
 
 async function tonCenterFetch(endpoint: string, options: FetchOptions = {}) {
   const isV2 = endpoint.includes('/v2/') || endpoint.startsWith('/get') || endpoint.startsWith('/run');
-  const baseUrl = isV2 ? TONCENTER_V2_URL : TONCENTER_V3_URL;
+  const baseUrl = isV2 ? getTonCenterV2Url() : getTonCenterV3Url();
   const url = `${baseUrl}${endpoint}`;
+  const apiKey = getApiKey();
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   
-  if (API_KEY) {
-    headers['X-API-Key'] = API_KEY;
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
   }
   
   log.debug('TONCENTER', `Fetching ${url}`);

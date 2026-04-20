@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
-import { db } from '../db';
-import { denDeposits, goals } from '../db/schema';
+import { db } from '../db/index.js';
+import { denDeposits, goals } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
-import { jwtService } from '../lib/jwt';
-import { tonCenter } from '../services/toncenter';
-import { priceService } from '../services/prices';
-import { log } from '../lib/logger';
-import { getGoalOnchainSnapshotSafe, getNestOnchainSnapshotSafe } from '../services/vaults';
+import { jwtService } from '../lib/jwt.js';
+import { tonCenter } from '../services/toncenter.js';
+import { priceService } from '../services/prices.js';
+import { log } from '../lib/logger.js';
+import { getGoalOnchainSnapshotSafe, getNestOnchainSnapshotSafe } from '../services/vaults.js';
 
 export const portfolioRoutes = new Hono();
 

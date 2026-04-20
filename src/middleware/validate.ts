@@ -1,6 +1,6 @@
 import type { Context, Next } from 'hono';
 import { z } from 'zod';
-import { AppError } from './error';
+import { AppError } from './error.js';
 
 export function validateBody<T extends z.ZodTypeAny>(schema: T) {
   return async (c: Context, next: Next) => {
