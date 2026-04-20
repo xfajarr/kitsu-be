@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validate.js';
 import { getTonNetwork } from '../lib/ton-network.js';
-import { buildStonfiTransfer, getStonfiConfig, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
+import { buildStonfiTransfer, getStonfiConfig, getStonfiPools, getStonfiTokens, getStonfiWalletAssets, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
 
 export const stonfiRoutes = new Hono();
 
@@ -32,6 +32,34 @@ stonfiRoutes.get('/config', (c) => {
     data: {
       config: getStonfiConfig(),
     },
+  });
+});
+
+stonfiRoutes.get('/assets', (c) => {
+  return c.json({
+    success: true,
+    data: {
+      assets: getStonfiTokens(getTonNetwork()),
+    },
+  });
+});
+
+stonfiRoutes.get('/pools', (c) => {
+  return c.json({
+    success: true,
+    data: {
+      pools: getStonfiPools(getTonNetwork()),
+    },
+  });
+});
+
+stonfiRoutes.get('/wallet-assets/:address', async (c) => {
+  const { address } = c.req.param();
+  const assets = await getStonfiWalletAssets(address, getTonNetwork());
+
+  return c.json({
+    success: true,
+    data: { assets },
   });
 });
 

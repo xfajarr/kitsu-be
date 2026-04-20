@@ -1,6 +1,6 @@
 import { Address } from '@ton/core';
 import { JettonMaster, TonClient } from '@ton/ton';
-import { getNetworkEnv, getTonNetwork } from '../lib/ton-network';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network.js';
 
 type TonstakersPoolDecoded = {
   total_balance: number;

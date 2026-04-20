@@ -3,7 +3,7 @@
 // API V2: https://testnet.toncenter.com/api/v2/
 
 import { log } from '../lib/logger.js';
-import { getNetworkEnv, getTonNetwork } from '../lib/ton-network';
+import { getNetworkEnv, getTonNetwork } from '../lib/ton-network.js';
 
 function getTonCenterV2Url() {
   return getNetworkEnv('TONCENTER_V2_URL') || (getTonNetwork() === 'mainnet' ? 'https://toncenter.com/api/v2' : 'https://testnet.toncenter.com/api/v2');

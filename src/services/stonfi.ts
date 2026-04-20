@@ -1,6 +1,7 @@
 import { Address, Cell, beginCell, storeMessage } from '@ton/ton';
 import { TonClient } from '@ton/ton';
 import { getTonChainId, getTonNetwork, type TonNetwork } from '../lib/ton-network.js';
+import { tonCenter } from './toncenter.js';
 
 export type StonfiToken = {
   symbol: string;
@@ -24,6 +25,21 @@ export type StonfiQuote = {
   protocolFeeUnits: string;
   referrerFeeUnits: string;
   rawQuote: unknown;
+};
+
+export type StonfiPool = {
+  id: string;
+  network: TonNetwork;
+  token0: StonfiToken;
+  token1: StonfiToken;
+  label: string;
+  kind: 'swap-pair';
+};
+
+export type StonfiWalletAsset = {
+  token: StonfiToken;
+  balanceUnits: string;
+  balanceDisplay: string;
 };
 
 const OMNISTON_CONFIG = {
@@ -78,6 +94,28 @@ export function getStonfiConfig(network = getTonNetwork()) {
 
 export function getStonfiTokens(network = getTonNetwork()) {
   return TOKENS[network];
+}
+
+export function getStonfiPools(network = getTonNetwork()) {
+  const tokens = TOKENS[network];
+  const pools: StonfiPool[] = [];
+
+  for (let i = 0; i < tokens.length; i += 1) {
+    for (let j = i + 1; j < tokens.length; j += 1) {
+      const token0 = tokens[i]!;
+      const token1 = tokens[j]!;
+      pools.push({
+        id: `${network}:${token0.symbol}-${token1.symbol}`,
+        network,
+        token0,
+        token1,
+        label: `${token0.symbol} / ${token1.symbol}`,
+        kind: 'swap-pair',
+      });
+    }
+  }
+
+  return pools;
 }
 
 export function resolveStonfiToken(input: string, network = getTonNetwork()) {
@@ -400,4 +438,43 @@ export async function trackStonfiTrade(params: {
   });
 
   return { txHash, status };
+}
+
+export async function getStonfiWalletAssets(address: string, network = getTonNetwork()) {
+  const tokens = TOKENS[network];
+  const [tonBalanceResponse, jettonsResponse] = await Promise.all([
+    tonCenter.v2.getAddressBalance(address),
+    tonCenter.v3.getJettonWallets(address),
+  ]);
+
+  const walletAssets: StonfiWalletAsset[] = [];
+  const tonToken = tokens.find((token) => token.kind === 'ton');
+
+  if (tonToken) {
+    const balanceUnits = String(tonBalanceResponse.result || '0');
+    walletAssets.push({
+      token: tonToken,
+      balanceUnits,
+      balanceDisplay: fromBaseUnits(balanceUnits, tonToken.decimals),
+    });
+  }
+
+  const jettons = Array.isArray(jettonsResponse.jetton_wallets) ? jettonsResponse.jetton_wallets : [];
+  const tokenByAddress = new Map(tokens.filter((token) => token.kind === 'jetton').map((token) => [token.address, token]));
+
+  for (const jetton of jettons) {
+    const token = tokenByAddress.get(jetton.jetton?.address || '');
+    if (!token) {
+      continue;
+    }
+
+    const balanceUnits = String(jetton.balance || '0');
+    walletAssets.push({
+      token,
+      balanceUnits,
+      balanceDisplay: fromBaseUnits(balanceUnits, token.decimals),
+    });
+  }
+
+  return walletAssets;
 }
