@@ -2,7 +2,8 @@
   "name": "kitsu-be",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": ">=18",
+    "bun": ">=1.1.0"
   },
   "scripts": {
     "start": "bun run src/index.ts",
@@ -28,10 +29,12 @@
     "postgres": "^3.4.9",
     "ton-core": "^0.53.0",
     "tonweb": "^0.0.66",
+    "ws": "^8.18.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/ws": "^8.5.14",
     "@vercel/node": "^5.7.11",
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.0.0"

@@ -1,7 +1,16 @@
 import { Address, Cell, beginCell, storeMessage } from '@ton/ton';
 import { TonClient } from '@ton/ton';
-import { getTonChainId, getTonNetwork, type TonNetwork } from '../lib/ton-network.js';
+import WebSocketNode from 'ws';
+import { getNetworkEnv, getTonChainId, getTonNetwork, type TonNetwork } from '../lib/ton-network.js';
 import { tonCenter } from './toncenter.js';
+
+/** Browser and Node 22+ expose WebSocket; Vercel Node 20 does not — use `ws` package. */
+function createOmnistonWebSocket(url: string) {
+  if (typeof globalThis.WebSocket === 'function') {
+    return new globalThis.WebSocket(url) as unknown as WebSocketNode;
+  }
+  return new WebSocketNode(url);
+}
 
 export type StonfiToken = {
   symbol: string;
@@ -42,6 +51,58 @@ export type StonfiWalletAsset = {
   balanceDisplay: string;
 };
 
+type StonfiDexAssetRow = {
+  contract_address: string;
+  symbol: string;
+  display_name: string;
+  decimals: number;
+  kind: string;
+};
+
+const DEX_ASSETS_CACHE_MS = 60_000;
+const dexAssetsCache: Partial<Record<TonNetwork, { at: number; tokens: StonfiToken[] }>> = {};
+
+function getStonfiDexApiRoot(network: TonNetwork): string {
+  const fromEnv = getNetworkEnv('STONFI_API_URL', network);
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, '');
+  }
+  return 'https://api.ston.fi';
+}
+
+function mapDexRowToToken(row: StonfiDexAssetRow, network: TonNetwork): StonfiToken {
+  const kind = row.kind?.toLowerCase() === 'ton' ? 'ton' : 'jetton';
+  return {
+    symbol: row.symbol,
+    name: row.display_name,
+    address: row.contract_address,
+    decimals: row.decimals,
+    kind,
+    network,
+  };
+}
+
+/** Full token catalog from STON.fi DEX HTTP API (`GET /v1/assets`). Cached ~60s. */
+export async function fetchStonfiDexAssets(network = getTonNetwork()): Promise<StonfiToken[]> {
+  const cached = dexAssetsCache[network];
+  if (cached && Date.now() - cached.at < DEX_ASSETS_CACHE_MS) {
+    return cached.tokens;
+  }
+
+  const root = getStonfiDexApiRoot(network);
+  const res = await fetch(`${root}/v1/assets`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(`STON.fi DEX assets request failed: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { asset_list?: StonfiDexAssetRow[] };
+  const rows = Array.isArray(body.asset_list) ? body.asset_list : [];
+  const tokens = rows.map((row) => mapDexRowToToken(row, network));
+  dexAssetsCache[network] = { at: Date.now(), tokens };
+  return tokens;
+}
+
 const OMNISTON_CONFIG = {
   mainnet: {
     apiUrl: 'wss://omni-ws.ston.fi',
@@ -53,35 +114,16 @@ const OMNISTON_CONFIG = {
   },
 } as const;
 
-const TOKENS: Record<TonNetwork, StonfiToken[]> = {
-  mainnet: [
-    { symbol: 'TON', name: 'Toncoin', address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', decimals: 9, kind: 'ton', network: 'mainnet' },
-    { symbol: 'STON', name: 'STON', address: 'EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO', decimals: 9, kind: 'jetton', network: 'mainnet' },
-    { symbol: 'USDT', name: 'Tether USD', address: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', decimals: 6, kind: 'jetton', network: 'mainnet' },
-  ],
-  testnet: [
-    { symbol: 'TON', name: 'Toncoin', address: 'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c', decimals: 9, kind: 'ton', network: 'testnet' },
-    { symbol: 'STON', name: 'STON', address: 'EQDLvsZol3juZyOAVG8tWsJntOxeEZWEaWCbbSjYakQpBh4v', decimals: 9, kind: 'jetton', network: 'testnet' },
-    { symbol: 'TestBLUE', name: 'TestBLUE', address: 'EQBw6tuHsnMXTz92pz820zdTZmRYUN-grIrGLWVMadGes4-9', decimals: 9, kind: 'jetton', network: 'testnet' },
-  ],
-};
-
-function getWebSocketCtor() {
-  if (typeof WebSocket !== 'undefined') {
-    return WebSocket;
-  }
-  throw new Error('WebSocket is not available in this runtime');
-}
-
 function getRpcUrl(network = getTonNetwork()) {
   return OMNISTON_CONFIG[network].rpcUrl;
 }
 
-export function getStonfiConfig(network = getTonNetwork()) {
+export async function getStonfiConfig(network = getTonNetwork()) {
+  const tokens = await fetchStonfiDexAssets(network);
   return {
     network,
     chainId: getTonChainId(network) as '-3' | '-239',
-    tokens: TOKENS[network],
+    tokens,
     omnistonApiUrl: OMNISTON_CONFIG[network].apiUrl,
     supported: {
       quote: true,
@@ -92,39 +134,61 @@ export function getStonfiConfig(network = getTonNetwork()) {
   };
 }
 
-export function getStonfiTokens(network = getTonNetwork()) {
-  return TOKENS[network];
-}
+export async function getStonfiPools(network = getTonNetwork()) {
+  const root = getStonfiDexApiRoot(network);
+  const res = await fetch(`${root}/v1/markets`, {
+    headers: { accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(`STON.fi DEX markets request failed: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { pairs?: [string, string][] };
+  const pairs = Array.isArray(body.pairs) ? body.pairs : [];
+  const assets = await fetchStonfiDexAssets(network);
+  const byAddress = new Map(assets.map((t) => [t.address, t]));
 
-export function getStonfiPools(network = getTonNetwork()) {
-  const tokens = TOKENS[network];
   const pools: StonfiPool[] = [];
-
-  for (let i = 0; i < tokens.length; i += 1) {
-    for (let j = i + 1; j < tokens.length; j += 1) {
-      const token0 = tokens[i]!;
-      const token1 = tokens[j]!;
-      pools.push({
-        id: `${network}:${token0.symbol}-${token1.symbol}`,
-        network,
-        token0,
-        token1,
-        label: `${token0.symbol} / ${token1.symbol}`,
-        kind: 'swap-pair',
-      });
+  for (let i = 0; i < pairs.length; i += 1) {
+    const [a, b] = pairs[i]!;
+    const token0 = byAddress.get(a);
+    const token1 = byAddress.get(b);
+    if (!token0 || !token1) {
+      continue;
     }
+    pools.push({
+      id: `${network}:${a}:${b}`,
+      network,
+      token0,
+      token1,
+      label: `${token0.symbol} / ${token1.symbol}`,
+      kind: 'swap-pair',
+    });
   }
 
   return pools;
 }
 
-export function resolveStonfiToken(input: string, network = getTonNetwork()) {
-  const normalized = input.trim().toUpperCase();
-  const token = TOKENS[network].find((item) => item.symbol.toUpperCase() === normalized || item.address === input.trim());
-  if (!token) {
-    throw new Error(`Unsupported STON.fi token for ${network}: ${input}`);
+export async function resolveStonfiToken(input: string, network = getTonNetwork()) {
+  const trimmed = input.trim();
+  const normalized = trimmed.toUpperCase();
+  const list = await fetchStonfiDexAssets(network);
+  const fromList = list.find((item) => item.symbol.toUpperCase() === normalized || item.address === trimmed);
+  if (fromList) {
+    return fromList;
   }
-  return token;
+
+  const root = getStonfiDexApiRoot(network);
+  const one = await fetch(`${root}/v1/assets/${encodeURIComponent(trimmed)}`, {
+    headers: { accept: 'application/json' },
+  });
+  if (one.ok) {
+    const row = (await one.json()) as { asset?: StonfiDexAssetRow };
+    if (row.asset) {
+      return mapDexRowToToken(row.asset, network);
+    }
+  }
+
+  throw new Error(`Unknown STON.fi asset for ${network}: ${input}`);
 }
 
 export function toBaseUnits(amount: string, decimals: number) {
@@ -150,11 +214,10 @@ export async function requestStonfiQuote(params: {
   amount: string;
 }) {
   const network = params.network ?? getTonNetwork();
-  const offerToken = resolveStonfiToken(params.offerToken, network);
-  const askToken = resolveStonfiToken(params.askToken, network);
+  const offerToken = await resolveStonfiToken(params.offerToken, network);
+  const askToken = await resolveStonfiToken(params.askToken, network);
   const amountUnits = toBaseUnits(params.amount, offerToken.decimals);
-  const WebSocketCtor = getWebSocketCtor();
-  const ws = new WebSocketCtor(OMNISTON_CONFIG[network].apiUrl);
+  const ws = createOmnistonWebSocket(OMNISTON_CONFIG[network].apiUrl);
 
   const rawQuote = await new Promise<any>((resolve, reject) => {
     let bestQuote: any = null;
@@ -199,7 +262,7 @@ export async function requestStonfiQuote(params: {
       }));
     };
 
-    ws.onmessage = (event: MessageEvent) => {
+    ws.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data));
         const candidate = data?.params?.result?.quote_updated?.quote
@@ -248,8 +311,7 @@ export async function buildStonfiTransfer(params: {
   quote: any;
 }) {
   const network = params.network ?? getTonNetwork();
-  const WebSocketCtor = getWebSocketCtor();
-  const ws = new WebSocketCtor(OMNISTON_CONFIG[network].apiUrl);
+  const ws = createOmnistonWebSocket(OMNISTON_CONFIG[network].apiUrl);
 
   const result = await new Promise<any>((resolve, reject) => {
     let transfer: any = null;
@@ -296,7 +358,7 @@ export async function buildStonfiTransfer(params: {
       }));
     };
 
-    ws.onmessage = (event: MessageEvent) => {
+    ws.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data));
         const messages = data?.result?.ton?.messages || data?.params?.result?.ton?.messages;
@@ -364,8 +426,7 @@ export async function trackStonfiTrade(params: {
   txBoc: string;
 }) {
   const network = params.network ?? getTonNetwork();
-  const WebSocketCtor = getWebSocketCtor();
-  const ws = new WebSocketCtor(OMNISTON_CONFIG[network].apiUrl);
+  const ws = createOmnistonWebSocket(OMNISTON_CONFIG[network].apiUrl);
   const txHash = await resolveTxHashByBoc({ network, walletAddress: params.walletAddress, txBoc: params.txBoc });
 
   const status = await new Promise<string>((resolve, reject) => {
@@ -411,7 +472,7 @@ export async function trackStonfiTrade(params: {
       }));
     };
 
-    ws.onmessage = (event: MessageEvent) => {
+    ws.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data));
         const result = data?.params?.result;
@@ -441,7 +502,7 @@ export async function trackStonfiTrade(params: {
 }
 
 export async function getStonfiWalletAssets(address: string, network = getTonNetwork()) {
-  const tokens = TOKENS[network];
+  const tokens = await fetchStonfiDexAssets(network);
   const [tonBalanceResponse, jettonsResponse] = await Promise.all([
     tonCenter.v2.getAddressBalance(address),
     tonCenter.v3.getJettonWallets(address),

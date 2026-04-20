@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validate.js';
 import { getTonNetwork } from '../lib/ton-network.js';
-import { buildStonfiTransfer, getStonfiConfig, getStonfiPools, getStonfiTokens, getStonfiWalletAssets, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
+import { buildStonfiTransfer, fetchStonfiDexAssets, getStonfiConfig, getStonfiPools, getStonfiWalletAssets, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
 
 export const stonfiRoutes = new Hono();
 
@@ -26,29 +26,32 @@ const trackTradeSchema = z.object({
   txBoc: z.string().min(1),
 });
 
-stonfiRoutes.get('/config', (c) => {
+stonfiRoutes.get('/config', async (c) => {
+  const config = await getStonfiConfig(getTonNetwork());
   return c.json({
     success: true,
     data: {
-      config: getStonfiConfig(),
+      config,
     },
   });
 });
 
-stonfiRoutes.get('/assets', (c) => {
+stonfiRoutes.get('/assets', async (c) => {
+  const assets = await fetchStonfiDexAssets(getTonNetwork());
   return c.json({
     success: true,
     data: {
-      assets: getStonfiTokens(getTonNetwork()),
+      assets,
     },
   });
 });
 
-stonfiRoutes.get('/pools', (c) => {
+stonfiRoutes.get('/pools', async (c) => {
+  const pools = await getStonfiPools(getTonNetwork());
   return c.json({
     success: true,
     data: {
-      pools: getStonfiPools(getTonNetwork()),
+      pools,
     },
   });
 });
