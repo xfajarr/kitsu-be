@@ -1,7 +1,7 @@
 import { Address, Cell, beginCell, storeMessage } from '@ton/ton';
 import { TonClient } from '@ton/ton';
 import WebSocketNode from 'ws';
-import { getNetworkEnv, getTonChainId, getTonNetwork, type TonNetwork } from '../lib/ton-network.js';
+import { getNetworkEnv, getTonChainId, getTonNetwork, runWithTonNetwork, type TonNetwork } from '../lib/ton-network.js';
 import { tonCenter } from './toncenter.js';
 
 /** Browser and Node 22+ expose WebSocket; Vercel Node 20 does not — use `ws` package. */
@@ -166,6 +166,45 @@ export async function getStonfiPools(network = getTonNetwork()) {
   }
 
   return pools;
+}
+
+/**
+ * Curated mainnet DEX pairs with deep liquidity (TON, USD₮, STON).
+ * Resolved against live `/v1/markets` so labels match STON.fi.
+ */
+const SAFE_MAINNET_ASSET_PAIRS: readonly [string, string][] = [
+  [
+    'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+  ],
+  [
+    'EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c',
+    'EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO',
+  ],
+  [
+    'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs',
+    'EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO',
+  ],
+];
+
+function poolMatchesAssetAddresses(pool: StonfiPool, addrA: string, addrB: string): boolean {
+  const key = [pool.token0.address, pool.token1.address].sort().join('|');
+  return key === [addrA, addrB].sort().join('|');
+}
+
+/** 2–3 vetted mainnet pools (independent of request `X-TON-Network`). */
+export async function getRecommendedSafeMainnetPools(): Promise<StonfiPool[]> {
+  return runWithTonNetwork('mainnet', async () => {
+    const all = await getStonfiPools('mainnet');
+    const out: StonfiPool[] = [];
+    for (const [a, b] of SAFE_MAINNET_ASSET_PAIRS) {
+      const found = all.find((p) => poolMatchesAssetAddresses(p, a, b));
+      if (found) {
+        out.push(found);
+      }
+    }
+    return out;
+  });
 }
 
 export async function resolveStonfiToken(input: string, network = getTonNetwork()) {

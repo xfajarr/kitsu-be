@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { validateBody } from '../middleware/validate.js';
 import { getTonNetwork } from '../lib/ton-network.js';
-import { buildStonfiTransfer, fetchStonfiDexAssets, getStonfiConfig, getStonfiPools, getStonfiWalletAssets, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
+import { buildStonfiTransfer, fetchStonfiDexAssets, getRecommendedSafeMainnetPools, getStonfiConfig, getStonfiPools, getStonfiWalletAssets, requestStonfiQuote, trackStonfiTrade } from '../services/stonfi.js';
 
 export const stonfiRoutes = new Hono();
 
@@ -52,6 +52,18 @@ stonfiRoutes.get('/pools', async (c) => {
     success: true,
     data: {
       pools,
+    },
+  });
+});
+
+/** Vetted high-liquidity pairs on STON.fi mainnet (TON / USD₮ / STON). */
+stonfiRoutes.get('/recommended-pools', async (c) => {
+  const pools = await getRecommendedSafeMainnetPools();
+  return c.json({
+    success: true,
+    data: {
+      pools,
+      network: 'mainnet' as const,
     },
   });
 });
